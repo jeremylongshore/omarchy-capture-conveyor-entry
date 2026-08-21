@@ -55,7 +55,10 @@ for m in re.finditer(r"\bText\s*\{", src):
     if not tm:
         continue
     # A bound is any of these: an explicit width, an elide mode, or a wrap mode.
-    if re.search(r"^\s*(width|elide|wrapMode)\s*:", block, re.M):
+    # A bound may be declared at the start of a line or after a semicolon or
+    # brace on a single-line element, which is valid QML. Anchoring only to
+    # start-of-line falsely blocks correctly bounded one-liners.
+    if re.search(r"(?:^|[;{])\s*(width|elide|wrapMode)\s*:", block, re.M):
         continue
     value = tm.group(1).strip()
     lineno = src[:i].count("\n") + 1
