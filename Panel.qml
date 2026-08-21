@@ -181,6 +181,8 @@ Panel {
             Text {
               text: root.loaded ? "WIDGET NAME" : "LOADING…"
               textFormat: Text.PlainText
+              width: parent.width
+              elide: Text.ElideRight
               color: root.bar ? root.bar.foreground : Color.foreground
               font.family: root.bar ? root.bar.fontFamily : Style.font.family
               font.pixelSize: Style.font.title
@@ -218,6 +220,8 @@ Panel {
                   anchors.verticalCenter: parent.verticalCenter
                   text: modelData.name
                   textFormat: Text.PlainText
+                  width: Math.min(implicitWidth, parent.width * 0.6)
+                  elide: Text.ElideRight
                   color: root.bar ? root.bar.foreground : Color.foreground
                   font.family: root.bar ? root.bar.fontFamily : Style.font.family
                   font.pixelSize: Style.font.body
@@ -229,6 +233,8 @@ Panel {
                   anchors.verticalCenter: parent.verticalCenter
                   text: modelData.value
                   textFormat: Text.PlainText
+                  width: Math.min(implicitWidth, parent.width * 0.35)
+                  elide: Text.ElideRight
                   color: root.bar ? Qt.darker(root.bar.foreground, 1.3) : Color.muted
                   font.family: root.bar ? root.bar.fontFamily : Style.font.family
                   font.pixelSize: Style.font.bodySmall
