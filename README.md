@@ -5,6 +5,8 @@ architecture and security patterns two shipped entries (Pit Wall, Crew Chief)
 earned the hard way, so a new widget starts from a state that already passes
 the pre-submit gates.
 
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/U5S225PTME)
+
 ## What you get
 
 | File | Role |
