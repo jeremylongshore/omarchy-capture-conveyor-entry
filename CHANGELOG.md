@@ -9,7 +9,7 @@ project uses Semantic Versioning.
 Regenerate after a release with:
 
 ```bash
-scripts/gen-changelog.py . "<Plugin Name>" "<version>"
+Use the repository's release tooling to add a version section.
 ```
 
 The generator normalises em and en dashes, because a changelog is shipped prose
