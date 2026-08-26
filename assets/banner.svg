@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="360" viewBox="0 0 1280 360" role="img" aria-labelledby="title desc">
+ <title id="title">Capture Conveyor</title><desc id="desc">A local screenshot inbox for Omarchy</desc><rect width="1280" height="360" fill="#11131e"/><rect x="72" y="70" width="174" height="174" rx="18" fill="none" stroke="#6ee7c8" stroke-width="12"/><circle cx="159" cy="157" r="35" fill="none" stroke="#6ee7c8" stroke-width="12"/><path d="M96 282h120m-93 25h120m-87 25h120" stroke="#35445b" stroke-width="8"/>
+ <text x="300" y="154" fill="#f4f5fa" font-family="monospace" font-size="58" font-weight="700" letter-spacing="4">CAPTURE CONVEYOR</text><text x="304" y="211" fill="#aeb9cf" font-family="monospace" font-size="24" letter-spacing="3">SCREENSHOTS BECOME A CALM, LOCAL INBOX</text><text x="304" y="287" fill="#6ee7c8" font-family="monospace" font-size="18">COPY · ANNOTATE · REVEAL · OCR BY CHOICE</text>
+</svg>
