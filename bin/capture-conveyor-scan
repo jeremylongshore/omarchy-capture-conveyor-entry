@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Bounded local inventory for Capture Conveyor. This follows Omarchy's
+# screenshot-dir precedence without evaluating user-dirs.dirs as shell code.
+set -euo pipefail
+
+max_items=24
+config_dir="${XDG_CONFIG_HOME:-$HOME/.config}"
+configured=""
+if [[ -f "$config_dir/user-dirs.dirs" ]]; then
+  configured="$(sed -n 's/^XDG_PICTURES_DIR="\$HOME\(\/[^"[:cntrl:]]*\)"$/\1/p' "$config_dir/user-dirs.dirs" | head -n1)"
+fi
+directory="${OMARCHY_SCREENSHOT_DIR:-${XDG_PICTURES_DIR:-${configured:+$HOME$configured}}}"
+directory="${directory:-$HOME/Pictures}"
+
+if [[ ! -d "$directory" ]]; then
+  jq -cn --arg directory "$directory" '{directory:$directory,truncated:false,captures:[]}'
+  exit 0
+fi
+
+directory="$(realpath -e -- "$directory")"
+records="$(mktemp -t capture-conveyor-XXXXXX.jsonl)"
+trap 'rm -f "$records"' EXIT
+count=0
+
+# Files are NUL-delimited until jq receives each already-resolved path. Only
+# regular screenshot-*.png files in the configured directory qualify; symlinks
+# and all other image files are intentionally outside this plugin's contract.
+while IFS= read -r -d '' record; do
+  stamp="${record%%$'\t'*}"
+  path="${record#*$'\t'}"
+  resolved="$(realpath -e -- "$path" 2>/dev/null || true)"
+  [[ "$resolved" == "$directory"/* && -f "$resolved" && ! -L "$path" ]] || continue
+  count=$((count + 1))
+  [[ "$count" -le "$max_items" ]] || continue
+  size="$(stat -c '%s' -- "$resolved" 2>/dev/null || printf '0')"
+  jq -cn --arg path "$resolved" --argjson modified "$stamp" --argjson bytes "$size" \
+    '{path:$path,modified:$modified,bytes:$bytes}' >> "$records"
+done < <(
+  find "$directory" -maxdepth 1 -type f -name 'screenshot-*.png' -printf '%T@\t%p\0' 2>/dev/null \
+    | LC_ALL=C sort -z -nr -k1,1 \
+    | head -z -n $((max_items + 1))
+)
+
+jq -cn --arg directory "$directory" --argjson truncated "$([[ "$count" -gt "$max_items" ]] && echo true || echo false)" \
+  --slurpfile captures "$records" '{directory:$directory,truncated:$truncated,captures:$captures}'

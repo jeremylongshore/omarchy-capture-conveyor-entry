@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "id": "io.github.YOURNAME.widget-name",
-  "name": "Widget Name",
+  "id": "io.github.jeremylongshore.capture-conveyor",
+  "name": "Capture Conveyor",
   "version": "0.1.0",
-  "author": "Your Name",
+  "author": "Jeremy Longshore",
   "license": "MIT",
-  "description": "One-sentence description of what the widget shows in the Omarchy bar.",
+  "description": "A local inbox for recent screenshots saved by Omarchy.",
   "kinds": [
     "bar-widget"
   ],
@@ -13,11 +13,12 @@
     "barWidget": "BarWidget.qml"
   },
   "barWidget": {
-    "displayName": "Widget Name",
-    "description": "Longer description: what the pill shows, what the panel carries, where the data comes from.",
+    "displayName": "Capture Conveyor",
+    "description": "Shows recent screenshots saved by Omarchy and offers explicit local capture, annotation, path-copy, reveal, and OCR-selection actions.",
     "category": "Info",
     "aliases": [
-      "widget-name"
+      "capture-conveyor",
+      "captures"
     ],
     "allowMultiple": false
   }
