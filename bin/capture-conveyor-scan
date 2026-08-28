@@ -4,6 +4,8 @@
 set -euo pipefail
 
 max_items=24
+# Entry budget applied BEFORE sort; see the producer pipeline comment below.
+scan_budget_entries=512
 config_dir="${XDG_CONFIG_HOME:-$HOME/.config}"
 configured=""
 if [[ -f "$config_dir/user-dirs.dirs" ]]; then
@@ -36,7 +38,19 @@ while IFS= read -r -d '' record; do
   jq -cn --arg path "$resolved" --argjson modified "$stamp" --argjson bytes "$size" \
     '{path:$path,modified:$modified,bytes:$bytes}' >> "$records"
 done < <(
-  find "$directory" -maxdepth 1 -type f -name 'screenshot-*.png' -printf '%T@\t%p\0' 2>/dev/null \
+  # Budget the stream BEFORE sort. Without the first head, sort consumes and
+  # buffers every matching filename in the directory before the final head
+  # limits anything, so an attacker-populated screenshot directory could cost
+  # real memory and CPU on every 20-second scan (marketplace review, #2900).
+  # The head between find and sort caps what sort can ever see at
+  # scan_budget_entries and SIGPIPE-terminates find once the budget is
+  # reached; the timeout bounds the whole producer in time. Inside budget the
+  # result is identical to the unbounded pipeline. Over budget (500+ matching
+  # files is far past any real screenshot workflow) newest-first selection
+  # degrades to newest-of-the-first-budget, which is an accepted trade against
+  # unbounded buffering.
+  timeout 5 find "$directory" -maxdepth 1 -type f -name 'screenshot-*.png' -printf '%T@\t%p\0' 2>/dev/null \
+    | head -z -n "$scan_budget_entries" \
     | LC_ALL=C sort -z -nr -k1,1 \
     | head -z -n $((max_items + 1))
 )
