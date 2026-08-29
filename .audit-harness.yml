@@ -1,0 +1,4 @@
+# Omarchy plugin: QML frontend plus a local command-line inventory helper.
+classify_pins:
+  - frontend
+  - cli

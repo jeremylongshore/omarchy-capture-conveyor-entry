@@ -11,6 +11,7 @@ test("clean strips markup triggers and control characters", () => {
   assert.equal(Model.clean("x".repeat(100), 12).length, 12)
   assert.equal(Model.clean(42, 0), "42")
   assert.equal(Model.clean(undefined), "")
+  assert.equal(Model.clean(null), "")
   assert.equal(Model.basename(""), "")
   assert.equal(Model.basename("/one/two.png"), "two.png")
 })
@@ -18,10 +19,17 @@ test("clean strips markup triggers and control characters", () => {
 test("image path validation rejects every non-actionable shape", () => {
   assert.equal(Model.isImagePath(null, dir), false)
   assert.equal(Model.isImagePath(dir + "/screenshot-a.png", null), false)
+  assert.equal(Model.isImagePath("7/screenshot-a.png", 7), false)
+  assert.equal(Model.isImagePath("7/screenshot-a.png", { length: 1, toString: () => "7" }), false)
   assert.equal(Model.isImagePath(dir + "/screenshot-a.png", ""), false)
   assert.equal(Model.isImagePath("/tmp/screenshot-a.png", dir), false)
+  assert.equal(Model.isImagePath("X".repeat(dir.length + 1) + "screenshot-a.png", dir), false)
+  assert.equal(Model.isImagePath("/screenshot-a.png", ""), false)
+  assert.equal(Model.isImagePath(dir + "Xscreenshot-a.png", dir), false)
   assert.equal(Model.isImagePath(dir + "/screenshot-a\t.png", dir), false)
   assert.equal(Model.isImagePath(dir + "/photo.png", dir), false)
+  assert.equal(Model.isImagePath(dir + "/nested/screenshot-a.png", dir), false)
+  assert.equal(Model.isImagePath(dir + "/screenshot-a.png.extra", dir), false)
   assert.equal(Model.isImagePath(dir + "/screenshot-a.PNG", dir), true)
 })
 
@@ -34,6 +42,7 @@ test("parseCaptures preserves only validated in-directory screenshot records", (
     { path: dir + "/screenshot-bad\nname.png", modified: 1_699_999_600 }
   ]), now)
   assert.equal(parsed.captures.length, 1)
+  assert.equal(parsed.truncated, false)
   assert.deepEqual(parsed.captures[0], { path: dir + "/screenshot-new.png", name: "screenshot-new.png", age: "1M AGO" })
 })
 
@@ -57,9 +66,12 @@ test("parseCaptures caps even a hostile over-cap scanner response", () => {
 test("time and pill labels remain bounded and truthful", () => {
   assert.equal(Model.timeLabel(1_699_999_990, now), "NOW")
   assert.equal(Model.timeLabel(1_699_992_800, now), "2H AGO")
+  assert.equal(Model.timeLabel(1_699_996_400, now), "1H AGO")
+  assert.equal(Model.timeLabel(1_699_913_600, now), "1D AGO")
   assert.equal(Model.timeLabel(1_699_700_000, now), "3D AGO")
   assert.equal(Model.timeLabel("bad", now), "UNKNOWN")
   assert.equal(Model.timeLabel(-1, now), "UNKNOWN")
+  assert.equal(Model.timeLabel(0, now), "UNKNOWN")
   assert.equal(Model.timeLabel(1_700_000_100, now), "NOW")
   assert.equal(Model.pillText([]), "CAPTURE")
   assert.equal(Model.pillText([{}]), "CAPTURE 1")
@@ -76,4 +88,10 @@ test("selection follows only paths still present after a refresh", () => {
   assert.equal(Model.nextSelection([], second.path), "")
   assert.equal(Model.nextSelection(null, second.path), "")
   assert.equal(Model.nextSelection([{}], second.path), "")
+})
+
+test("capture rows receive stable theme-derived hues", () => {
+  assert.equal(Model.captureHue(""), 0.48)
+  assert.equal(Model.captureHue("/a/screenshot-one.png"), 0.51)
+  assert.equal(Model.captureHue("/a/screenshot-two.png"), 0.63)
 })

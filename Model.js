@@ -15,7 +15,8 @@ function isImagePath(path, directory) {
   if (typeof path !== "string" || typeof directory !== "string") return false
   if (!directory || path.indexOf(directory + "/") !== 0) return false
   if (/[\x00-\x1f\x7f]/.test(path)) return false
-  return /\/screenshot-[^/]+\.png$/i.test(path)
+  var suffix = path.slice(directory.length + 1)
+  return /^screenshot-[^/]+\.png$/i.test(suffix)
 }
 
 function basename(path) {
@@ -76,6 +77,13 @@ function nextSelection(rows, current) {
   return rows[0] && typeof rows[0].path === "string" ? rows[0].path : ""
 }
 
+function captureHue(path) {
+  var s = String(path || "")
+  var hash = 0
+  for (var i = 0; i < s.length; i++) hash = (hash + s.charCodeAt(i) * (i + 1)) % 360
+  return (0.48 + (hash % 17) / 100) % 1
+}
+
 if (typeof module !== "undefined") {
   module.exports = {
     MAX_ITEMS: MAX_ITEMS,
@@ -86,6 +94,7 @@ if (typeof module !== "undefined") {
     parseCaptures: parseCaptures,
     pillText: pillText,
     tooltipText: tooltipText,
-    nextSelection: nextSelection
+    nextSelection: nextSelection,
+    captureHue: captureHue
   }
 }

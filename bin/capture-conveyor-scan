@@ -3,12 +3,13 @@
 use strict;
 use warnings;
 
-use Cwd qw(realpath);
 use Fcntl qw(O_DIRECTORY O_NOFOLLOW O_NONBLOCK O_RDONLY :mode);
+use File::Spec;
 use JSON::PP ();
 
 my $MAX_ITEMS        = 24;
 my $SCAN_BUDGET      = 512;
+my $NAME_BYTE_BUDGET = 65536;
 my $CONFIG_MAX_BYTES = 8192;
 my $home             = $ENV{HOME} // '';
 my $config_dir       = length($ENV{XDG_CONFIG_HOME} // '')
@@ -24,13 +25,35 @@ sub emit_result {
     }), "\n";
 }
 
+sub open_directory_chain {
+    my ($path) = @_;
+    return unless File::Spec->file_name_is_absolute($path);
+    my @parts = grep { length($_) } File::Spec->splitdir($path);
+    return if grep { $_ eq '.' || $_ eq '..' } @parts;
+
+    sysopen(my $current, '/', O_RDONLY | O_NONBLOCK | O_DIRECTORY | O_NOFOLLOW)
+        or return;
+    my @chain = ($current);
+    for my $part (@parts) {
+        my $pinned = '/proc/self/fd/' . fileno($current) . '/' . $part;
+        sysopen(my $next, $pinned,
+            O_RDONLY | O_NONBLOCK | O_DIRECTORY | O_NOFOLLOW) or return;
+        my @next_stat = stat($next);
+        return unless @next_stat && S_ISDIR($next_stat[2]);
+        push @chain, $next;
+        $current = $next;
+    }
+    return (\@chain, $current);
+}
+
 sub configured_pictures_suffix {
     my ($dir) = @_;
 
-    # Pin the parent first. /proc/self/fd keeps the lookup rooted in that exact
-    # directory even if a same-UID process swaps the pathname concurrently.
-    sysopen(my $dir_fh, $dir,
-        O_RDONLY | O_NONBLOCK | O_DIRECTORY | O_NOFOLLOW) or return '';
+    # Retain the complete parent chain. /proc/self/fd keeps the final lookup
+    # rooted in that exact directory even if a same-UID process swaps any
+    # pathname component concurrently.
+    my ($chain, $dir_fh) = open_directory_chain($dir);
+    return '' unless $chain && $dir_fh;
     my @dir_stat = stat($dir_fh);
     return '' unless @dir_stat && S_ISDIR($dir_stat[2]);
 
@@ -63,16 +86,21 @@ my $directory = length($ENV{OMARCHY_SCREENSHOT_DIR} // '')
             ? "$home$configured"
             : "$home/Pictures";
 
-my $resolved = realpath($directory);
-unless (defined($resolved)) {
+# Hold the complete directory chain while enumerating it, and open each candidate beneath the
+# held descriptor. No image content is read and no replaceable records tempfile
+# exists: the bounded result set stays in memory until the single JSON write.
+my ($capture_chain, $capture_fh) = open_directory_chain($directory);
+unless ($capture_chain && $capture_fh) {
     emit_result($directory, 0, []);
     exit 0;
 }
-
-# Hold the directory while enumerating it, and open each candidate beneath the
-# held descriptor. No image content is read and no replaceable records tempfile
-# exists: the bounded result set stays in memory until the single JSON write.
-opendir(my $dir_handle, $resolved) or do {
+my $capture_ref = '/proc/self/fd/' . fileno($capture_fh);
+my $resolved = readlink($capture_ref);
+unless (defined($resolved) && File::Spec->file_name_is_absolute($resolved)) {
+    emit_result($directory, 0, []);
+    exit 0;
+}
+opendir(my $dir_handle, $capture_ref) or do {
     emit_result($directory, 0, []);
     exit 0;
 };
@@ -85,7 +113,16 @@ unless (@held_stat && S_ISDIR($held_stat[2])) {
 my $held_prefix = '/proc/self/fd/' . fileno($dir_handle);
 my @captures;
 my $budget_hit = 0;
+my $entries_seen = 0;
+my $name_bytes = 0;
 while (defined(my $name = readdir($dir_handle))) {
+    next if $name eq '.' || $name eq '..';
+    $entries_seen++;
+    $name_bytes += length($name);
+    if ($entries_seen > $SCAN_BUDGET || $name_bytes > $NAME_BYTE_BUDGET) {
+        $budget_hit = 1;
+        last;
+    }
     next unless $name =~ /^screenshot-.*\.png$/;
 
     sysopen(my $image_fh, "$held_prefix/$name",
@@ -98,15 +135,11 @@ while (defined(my $name = readdir($dir_handle))) {
         modified => 0 + $image_stat[9],
         bytes    => 0 + $image_stat[7],
     };
-    if (@captures >= $SCAN_BUDGET) {
-        $budget_hit = 1;
-        last;
-    }
 }
 
 # If the configured directory pathname was replaced during the scan, discard
 # the snapshot instead of returning paths that no longer name the held inode.
-my @final_stat = stat($resolved);
+my @final_stat = stat($directory);
 unless (@final_stat
     && $final_stat[0] == $held_stat[0]
     && $final_stat[1] == $held_stat[1]) {

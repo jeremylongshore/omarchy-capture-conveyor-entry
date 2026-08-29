@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "io.github.jeremylongshore.capture-conveyor",
   "name": "Capture Conveyor",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": "Jeremy Longshore",
   "license": "MIT",
-  "description": "A local inbox for recent screenshots saved by Omarchy.",
+  "description": "A keyboard-friendly local inbox for recent screenshots saved by Omarchy.",
   "kinds": [
     "bar-widget"
   ],
@@ -14,7 +14,7 @@
   },
   "barWidget": {
     "displayName": "Capture Conveyor",
-    "description": "Shows recent screenshots saved by Omarchy and offers explicit local capture, annotation, path-copy, reveal, and OCR-selection actions.",
+    "description": "Triage recent screenshots with selection, capture, path-copy, reveal, and OCR actions.",
     "category": "Info",
     "aliases": [
       "capture-conveyor",

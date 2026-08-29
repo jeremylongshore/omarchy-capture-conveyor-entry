@@ -19,8 +19,25 @@ and gate c28 refuses them.
 
 Nothing yet.
 
-## [1.0.0] - unreleased
+## [0.2.0] - 2026-08-29
 
 ### Added
 
-- Initial plugin.
+- Keyboard selection, named accessibility roles, visible action failures, and theme-derived capture rows.
+- Full audit, mutation, adversarial race, stock-runtime smoke, and Buzz E2E lanes.
+
+### Changed
+
+- Removed the non-stock existing-file annotation command; new captures continue through Omarchy's native capture flow.
+
+### Fixed
+
+- Bound every directory entry and filename byte before sorting.
+- Retain complete config and capture directory descriptor chains.
+- Reject nested model paths and prove config/capture racers actually execute.
+
+## [0.1.0] - 2026-08-25
+
+### Added
+
+- Initial Capture Conveyor plugin.

@@ -52,8 +52,11 @@ REMOTE="$(mktemp -t rigrender-XXXXXX.sh)"
 trap 'rm -f "$TGZ" "$REMOTE"' EXIT
 cat > "$REMOTE" <<REMOTE_EOF
 #!/bin/sh
+set -eu
 MOD="$MOD"; NAME="$NAME"; RES="$RES"
 export XDG_RUNTIME_DIR=/tmp/xdgrt
+export OMARCHY_PATH=/root/omarchy
+export PATH=/root/omarchy/bin:\$PATH
 mkdir -p \$XDG_RUNTIME_DIR; chmod 700 \$XDG_RUNTIME_DIR
 
 # Start a headless compositor only if one is not already serving.
@@ -111,7 +114,9 @@ sleep 18
 echo "===QML WARNINGS==="
 # libEGL/MESA/ZINK noise is the headless software renderer, not the plugin.
 grep -a -iE "cannot assign|is not a type|unable to|no such|ERROR" /tmp/qs-render.log \
-  | grep -av libEGL | grep -av MESA | grep -av ZINK | head -10
+  | grep -av libEGL | grep -av MESA | grep -av ZINK \
+  | grep -av 'pw.loop' | grep -av 'quickshell.service.pipewire.loop' \
+  | grep -av 'org.freedesktop.UPower' | head -10
 
 qs -p /root/omarchy/shell ipc call "\$MOD" toggle 2>/dev/null
 sleep 6
