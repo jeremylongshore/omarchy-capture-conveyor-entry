@@ -11,4 +11,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: node --test tests/*.test.js
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - name: ShellCheck developer and rig scripts
+        run: |
+          shellcheck --version
+          shellcheck --severity=warning scripts/*.sh .githooks/pre-push

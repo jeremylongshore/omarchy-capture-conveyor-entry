@@ -67,3 +67,13 @@ test("time and pill labels remain bounded and truthful", () => {
   assert.equal(Model.tooltipText(null), "No captures in Screenshots")
   assert.equal(Model.tooltipText([{}]), "1 recent captures")
 })
+
+test("selection follows only paths still present after a refresh", () => {
+  const first = { path: dir + "/screenshot-first.png" }
+  const second = { path: dir + "/screenshot-second.png" }
+  assert.equal(Model.nextSelection([first, second], second.path), second.path)
+  assert.equal(Model.nextSelection([first], second.path), first.path)
+  assert.equal(Model.nextSelection([], second.path), "")
+  assert.equal(Model.nextSelection(null, second.path), "")
+  assert.equal(Model.nextSelection([{}], second.path), "")
+})

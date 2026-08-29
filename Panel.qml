@@ -52,13 +52,19 @@ Panel {
       waitForEnd: true
       onStreamFinished: {
         var parsed = Model.parseCaptures(text, root.nowMs)
-        if (parsed.directory !== "") {
-          root.rows = parsed.captures
-          root.captureDirectory = parsed.directory
-          root.scanTruncated = parsed.truncated
+        if (parsed.directory === "") {
+          root.rows = []
+          root.captureDirectory = ""
+          root.scanTruncated = false
+          root.selectedPath = ""
           root.loaded = true
-          if (root.selectedPath === "" && root.rows.length) root.selectedPath = root.rows[0].path
+          return
         }
+        root.rows = parsed.captures
+        root.captureDirectory = parsed.directory
+        root.scanTruncated = parsed.truncated
+        root.selectedPath = Model.nextSelection(root.rows, root.selectedPath)
+        root.loaded = true
       }
     }
   }

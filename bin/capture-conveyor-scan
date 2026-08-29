@@ -1,59 +1,123 @@
-#!/usr/bin/env bash
-# Bounded local inventory for Capture Conveyor. This follows Omarchy's
-# screenshot-dir precedence without evaluating user-dirs.dirs as shell code.
-set -euo pipefail
+#!/usr/bin/perl
+# Bounded, descriptor-backed local inventory for Capture Conveyor.
+use strict;
+use warnings;
 
-max_items=24
-# Entry budget applied BEFORE sort; see the producer pipeline comment below.
-scan_budget_entries=512
-config_dir="${XDG_CONFIG_HOME:-$HOME/.config}"
-configured=""
-if [[ -f "$config_dir/user-dirs.dirs" ]]; then
-  configured="$(sed -n 's/^XDG_PICTURES_DIR="\$HOME\(\/[^"[:cntrl:]]*\)"$/\1/p' "$config_dir/user-dirs.dirs" | head -n1)"
-fi
-directory="${OMARCHY_SCREENSHOT_DIR:-${XDG_PICTURES_DIR:-${configured:+$HOME$configured}}}"
-directory="${directory:-$HOME/Pictures}"
+use Cwd qw(realpath);
+use Fcntl qw(O_DIRECTORY O_NOFOLLOW O_NONBLOCK O_RDONLY :mode);
+use JSON::PP ();
 
-if [[ ! -d "$directory" ]]; then
-  jq -cn --arg directory "$directory" '{directory:$directory,truncated:false,captures:[]}'
-  exit 0
-fi
+my $MAX_ITEMS        = 24;
+my $SCAN_BUDGET      = 512;
+my $CONFIG_MAX_BYTES = 8192;
+my $home             = $ENV{HOME} // '';
+my $config_dir       = length($ENV{XDG_CONFIG_HOME} // '')
+    ? $ENV{XDG_CONFIG_HOME}
+    : "$home/.config";
 
-directory="$(realpath -e -- "$directory")"
-records="$(mktemp -t capture-conveyor-XXXXXX.jsonl)"
-trap 'rm -f "$records"' EXIT
-count=0
+sub emit_result {
+    my ($directory, $truncated, $captures) = @_;
+    print JSON::PP->new->ascii(1)->canonical(1)->encode({
+        directory => $directory,
+        truncated => $truncated ? JSON::PP::true : JSON::PP::false,
+        captures  => $captures,
+    }), "\n";
+}
 
-# Files are NUL-delimited until jq receives each already-resolved path. Only
-# regular screenshot-*.png files in the configured directory qualify; symlinks
-# and all other image files are intentionally outside this plugin's contract.
-while IFS= read -r -d '' record; do
-  stamp="${record%%$'\t'*}"
-  path="${record#*$'\t'}"
-  resolved="$(realpath -e -- "$path" 2>/dev/null || true)"
-  [[ "$resolved" == "$directory"/* && -f "$resolved" && ! -L "$path" ]] || continue
-  count=$((count + 1))
-  [[ "$count" -le "$max_items" ]] || continue
-  size="$(stat -c '%s' -- "$resolved" 2>/dev/null || printf '0')"
-  jq -cn --arg path "$resolved" --argjson modified "$stamp" --argjson bytes "$size" \
-    '{path:$path,modified:$modified,bytes:$bytes}' >> "$records"
-done < <(
-  # Budget the stream BEFORE sort. Without the first head, sort consumes and
-  # buffers every matching filename in the directory before the final head
-  # limits anything, so an attacker-populated screenshot directory could cost
-  # real memory and CPU on every 20-second scan (marketplace review, #2900).
-  # The head between find and sort caps what sort can ever see at
-  # scan_budget_entries and SIGPIPE-terminates find once the budget is
-  # reached; the timeout bounds the whole producer in time. Inside budget the
-  # result is identical to the unbounded pipeline. Over budget (500+ matching
-  # files is far past any real screenshot workflow) newest-first selection
-  # degrades to newest-of-the-first-budget, which is an accepted trade against
-  # unbounded buffering.
-  timeout 5 find "$directory" -maxdepth 1 -type f -name 'screenshot-*.png' -printf '%T@\t%p\0' 2>/dev/null \
-    | head -z -n "$scan_budget_entries" \
-    | LC_ALL=C sort -z -nr -k1,1 \
-    | head -z -n $((max_items + 1))
-)
+sub configured_pictures_suffix {
+    my ($dir) = @_;
 
-jq -cn --arg directory "$directory" --argjson truncated "$([[ "$count" -gt "$max_items" ]] && echo true || echo false)" \
-  --slurpfile captures "$records" '{directory:$directory,truncated:$truncated,captures:$captures}'
+    # Pin the parent first. /proc/self/fd keeps the lookup rooted in that exact
+    # directory even if a same-UID process swaps the pathname concurrently.
+    sysopen(my $dir_fh, $dir,
+        O_RDONLY | O_NONBLOCK | O_DIRECTORY | O_NOFOLLOW) or return '';
+    my @dir_stat = stat($dir_fh);
+    return '' unless @dir_stat && S_ISDIR($dir_stat[2]);
+
+    my $pinned = '/proc/self/fd/' . fileno($dir_fh) . '/user-dirs.dirs';
+    sysopen(my $config_fh, $pinned,
+        O_RDONLY | O_NONBLOCK | O_NOFOLLOW) or return '';
+    my @config_stat = stat($config_fh);
+    return '' unless @config_stat
+        && S_ISREG($config_stat[2])
+        && $config_stat[4] == $<
+        && $config_stat[7] <= $CONFIG_MAX_BYTES;
+
+    my $contents = '';
+    my $read = sysread($config_fh, $contents, $CONFIG_MAX_BYTES + 1);
+    return '' unless defined($read) && $read <= $CONFIG_MAX_BYTES;
+
+    for my $line (split /\n/, $contents) {
+        # Match the XDG form without evaluating the file as shell code.
+        return $1 if $line =~ /^XDG_PICTURES_DIR="\$HOME(\/[^"\x00-\x1f]*)"\r?$/;
+    }
+    return '';
+}
+
+my $configured = configured_pictures_suffix($config_dir);
+my $directory = length($ENV{OMARCHY_SCREENSHOT_DIR} // '')
+    ? $ENV{OMARCHY_SCREENSHOT_DIR}
+    : length($ENV{XDG_PICTURES_DIR} // '')
+        ? $ENV{XDG_PICTURES_DIR}
+        : length($configured)
+            ? "$home$configured"
+            : "$home/Pictures";
+
+my $resolved = realpath($directory);
+unless (defined($resolved)) {
+    emit_result($directory, 0, []);
+    exit 0;
+}
+
+# Hold the directory while enumerating it, and open each candidate beneath the
+# held descriptor. No image content is read and no replaceable records tempfile
+# exists: the bounded result set stays in memory until the single JSON write.
+opendir(my $dir_handle, $resolved) or do {
+    emit_result($directory, 0, []);
+    exit 0;
+};
+my @held_stat = stat($dir_handle);
+unless (@held_stat && S_ISDIR($held_stat[2])) {
+    emit_result($directory, 0, []);
+    exit 0;
+}
+
+my $held_prefix = '/proc/self/fd/' . fileno($dir_handle);
+my @captures;
+my $budget_hit = 0;
+while (defined(my $name = readdir($dir_handle))) {
+    next unless $name =~ /^screenshot-.*\.png$/;
+
+    sysopen(my $image_fh, "$held_prefix/$name",
+        O_RDONLY | O_NONBLOCK | O_NOFOLLOW) or next;
+    my @image_stat = stat($image_fh);
+    next unless @image_stat && S_ISREG($image_stat[2]);
+
+    push @captures, {
+        path     => "$resolved/$name",
+        modified => 0 + $image_stat[9],
+        bytes    => 0 + $image_stat[7],
+    };
+    if (@captures >= $SCAN_BUDGET) {
+        $budget_hit = 1;
+        last;
+    }
+}
+
+# If the configured directory pathname was replaced during the scan, discard
+# the snapshot instead of returning paths that no longer name the held inode.
+my @final_stat = stat($resolved);
+unless (@final_stat
+    && $final_stat[0] == $held_stat[0]
+    && $final_stat[1] == $held_stat[1]) {
+    emit_result($directory, 0, []);
+    exit 0;
+}
+
+@captures = sort {
+    $b->{modified} <=> $a->{modified} || $a->{path} cmp $b->{path}
+} @captures;
+my $truncated = $budget_hit || @captures > $MAX_ITEMS;
+splice(@captures, $MAX_ITEMS) if @captures > $MAX_ITEMS;
+
+emit_result($resolved, $truncated, \@captures);

@@ -68,6 +68,14 @@ function tooltipText(rows) {
   return rows && rows.length ? rows.length + " recent captures" : "No captures in Screenshots"
 }
 
+function nextSelection(rows, current) {
+  if (!rows || !rows.length) return ""
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i] && rows[i].path === current) return current
+  }
+  return rows[0] && typeof rows[0].path === "string" ? rows[0].path : ""
+}
+
 if (typeof module !== "undefined") {
   module.exports = {
     MAX_ITEMS: MAX_ITEMS,
@@ -77,6 +85,7 @@ if (typeof module !== "undefined") {
     timeLabel: timeLabel,
     parseCaptures: parseCaptures,
     pillText: pillText,
-    tooltipText: tooltipText
+    tooltipText: tooltipText,
+    nextSelection: nextSelection
   }
 }

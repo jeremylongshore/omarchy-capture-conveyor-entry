@@ -65,6 +65,22 @@ export WAYLAND_DISPLAY=wayland-1
 export SWAYSOCK=\$(ls \$XDG_RUNTIME_DIR/sway-ipc.*.sock 2>/dev/null | head -1)
 swaymsg output HEADLESS-1 resolution "\$RES" >/dev/null 2>&1
 
+# Curated local fixture data makes this plugin's evidence image prove its real
+# value: a recent-capture inbox with selections and explicit actions. The files
+# are metadata-only test fixtures inside the disposable Omarchy container.
+FIXTURES=/tmp/capture-conveyor-fixtures
+mkdir -p "\$FIXTURES"
+find "\$FIXTURES" -mindepth 1 -maxdepth 1 -delete
+printf fixture > "\$FIXTURES/screenshot-launch-ready.png"
+printf fixture > "\$FIXTURES/screenshot-review-notes.png"
+printf fixture > "\$FIXTURES/screenshot-docs-polish.png"
+printf fixture > "\$FIXTURES/screenshot-desktop-flow.png"
+touch -d '1 minute ago' "\$FIXTURES/screenshot-launch-ready.png"
+touch -d '8 minutes ago' "\$FIXTURES/screenshot-review-notes.png"
+touch -d '24 minutes ago' "\$FIXTURES/screenshot-docs-polish.png"
+touch -d '2 hours ago' "\$FIXTURES/screenshot-desktop-flow.png"
+export OMARCHY_SCREENSHOT_DIR="\$FIXTURES"
+
 pkill -f 'qs -p' 2>/dev/null; sleep 1
 # Purge EVERY directory that declares this module id, not just the one matching
 # our folder name. The rig accumulates installs from earlier runs and from the

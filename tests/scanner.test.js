@@ -3,7 +3,7 @@ const assert = require("node:assert/strict")
 const fs = require("node:fs")
 const os = require("node:os")
 const path = require("node:path")
-const { spawnSync } = require("node:child_process")
+const { spawn, spawnSync } = require("node:child_process")
 
 const scanner = path.join(__dirname, "..", "bin", "capture-conveyor-scan")
 
@@ -18,6 +18,10 @@ function scan(env) {
   const result = spawnSync(scanner, [], { encoding: "utf8", env: { ...process.env, ...env } })
   assert.equal(result.status, 0, result.stderr)
   return JSON.parse(result.stdout)
+}
+function stopRacer(child) {
+  if (child.exitCode !== null) return Promise.resolve()
+  return new Promise(resolve => { child.once("close", resolve); child.kill() })
 }
 
 test("scanner follows explicit Omarchy directory and excludes non-contract files", () => {
@@ -52,5 +56,124 @@ test("scanner bounds output and marks a partial inventory", () => {
   assert.equal(result.captures.length, 24)
   assert.equal(result.truncated, true)
   assert.match(result.captures[0].path, /screenshot-29\.png$/)
+  fs.rmSync(root, { recursive: true, force: true })
+})
+
+test("scanner rejects a final config symlink without reading its victim", () => {
+  const root = temp(); const config = path.join(root, "config"); const victim = path.join(root, "victim")
+  const pictures = path.join(root, "Victim Pictures")
+  fs.mkdirSync(config); fs.mkdirSync(victim); fs.mkdirSync(pictures)
+  fs.writeFileSync(path.join(victim, "user-dirs.dirs"), 'XDG_PICTURES_DIR="$HOME/Victim Pictures"\n')
+  fs.symlinkSync(path.join(victim, "user-dirs.dirs"), path.join(config, "user-dirs.dirs"))
+  write(pictures, "screenshot-secret.png", 1700000000)
+  const result = scan({ HOME: root, XDG_CONFIG_HOME: config, OMARCHY_SCREENSHOT_DIR: "", XDG_PICTURES_DIR: "" })
+  assert.equal(result.directory, path.join(root, "Pictures"))
+  assert.deepEqual(result.captures, [])
+  fs.rmSync(root, { recursive: true, force: true })
+})
+
+test("scanner pins the final config descriptor during a same-UID symlink swap race", async () => {
+  const root = temp(); const config = path.join(root, "config"); const safePictures = path.join(root, "Safe Pictures")
+  const victimPictures = path.join(root, "Victim Pictures"); const victim = path.join(root, "victim.dirs")
+  const final = path.join(config, "user-dirs.dirs"); const safe = path.join(config, "safe.dirs")
+  fs.mkdirSync(config); fs.mkdirSync(safePictures); fs.mkdirSync(victimPictures)
+  fs.writeFileSync(safe, 'XDG_PICTURES_DIR="$HOME/Safe Pictures"\n')
+  fs.copyFileSync(safe, final)
+  fs.writeFileSync(victim, 'XDG_PICTURES_DIR="$HOME/Victim Pictures"\n')
+  write(safePictures, "screenshot-safe.png", 1700000000)
+  write(victimPictures, "screenshot-secret.png", 1700000001)
+  const racer = spawn(process.execPath, ["-e", `
+    const fs = require("node:fs"); const [final, safe, victim] = process.argv.slice(1)
+    for (let i = 0; i < 10000; i++) {
+      try { fs.unlinkSync(final) } catch {}
+      try { fs.symlinkSync(victim, final) } catch {}
+      try { fs.unlinkSync(final) } catch {}
+      try { fs.copyFileSync(safe, final) } catch {}
+    }
+  `, final, safe, victim], { stdio: "ignore" })
+  try {
+    for (let i = 0; i < 40; i++) {
+      const result = scan({ HOME: root, XDG_CONFIG_HOME: config, OMARCHY_SCREENSHOT_DIR: "", XDG_PICTURES_DIR: "" })
+      assert.notEqual(result.directory, victimPictures)
+      assert.equal(result.captures.some(x => x.path.includes("screenshot-secret.png")), false)
+    }
+  } finally {
+    await stopRacer(racer)
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test("scanner rejects a symlinked config parent directory", () => {
+  const root = temp(); const victim = path.join(root, "victim"); const pictures = path.join(root, "Victim Pictures")
+  fs.mkdirSync(victim); fs.mkdirSync(pictures)
+  fs.writeFileSync(path.join(victim, "user-dirs.dirs"), 'XDG_PICTURES_DIR="$HOME/Victim Pictures"\n')
+  fs.symlinkSync(victim, path.join(root, "config-link"), "dir")
+  write(pictures, "screenshot-secret.png", 1700000000)
+  const result = scan({ HOME: root, XDG_CONFIG_HOME: path.join(root, "config-link"), OMARCHY_SCREENSHOT_DIR: "", XDG_PICTURES_DIR: "" })
+  assert.equal(result.directory, path.join(root, "Pictures"))
+  assert.deepEqual(result.captures, [])
+  fs.rmSync(root, { recursive: true, force: true })
+})
+
+test("scanner pins the config parent during a same-UID directory swap race", async () => {
+  const root = temp(); const config = path.join(root, "config"); const parked = path.join(root, "config-parked")
+  const safePictures = path.join(root, "Safe Pictures"); const victimDir = path.join(root, "victim-config")
+  const victimPictures = path.join(root, "Victim Pictures")
+  fs.mkdirSync(config); fs.mkdirSync(victimDir); fs.mkdirSync(safePictures); fs.mkdirSync(victimPictures)
+  fs.writeFileSync(path.join(config, "user-dirs.dirs"), 'XDG_PICTURES_DIR="$HOME/Safe Pictures"\n')
+  fs.writeFileSync(path.join(victimDir, "user-dirs.dirs"), 'XDG_PICTURES_DIR="$HOME/Victim Pictures"\n')
+  write(safePictures, "screenshot-safe.png", 1700000000)
+  write(victimPictures, "screenshot-secret.png", 1700000001)
+  const racer = spawn(process.execPath, ["-e", `
+    const fs = require("node:fs"); const [config, parked, victim] = process.argv.slice(1)
+    for (let i = 0; i < 10000; i++) {
+      try { fs.renameSync(config, parked) } catch {}
+      try { fs.symlinkSync(victim, config, "dir") } catch {}
+      try { fs.unlinkSync(config) } catch {}
+      try { fs.renameSync(parked, config) } catch {}
+    }
+  `, config, parked, victimDir], { stdio: "ignore" })
+  try {
+    for (let i = 0; i < 40; i++) {
+      const result = scan({ HOME: root, XDG_CONFIG_HOME: config, OMARCHY_SCREENSHOT_DIR: "", XDG_PICTURES_DIR: "" })
+      assert.notEqual(result.directory, victimPictures)
+      assert.equal(result.captures.some(x => x.path.includes("screenshot-secret.png")), false)
+    }
+  } finally {
+    await stopRacer(racer)
+    if (fs.existsSync(config) && fs.lstatSync(config).isSymbolicLink()) fs.unlinkSync(config)
+    if (!fs.existsSync(config) && fs.existsSync(parked)) fs.renameSync(parked, config)
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test("scanner does not block on a config FIFO", () => {
+  const root = temp(); const config = path.join(root, "config"); fs.mkdirSync(config)
+  const fifo = path.join(config, "user-dirs.dirs")
+  assert.equal(spawnSync("mkfifo", [fifo]).status, 0)
+  const started = Date.now()
+  const result = scan({ HOME: root, XDG_CONFIG_HOME: config, OMARCHY_SCREENSHOT_DIR: "", XDG_PICTURES_DIR: "" })
+  assert.ok(Date.now() - started < 1500, "FIFO handling must fail closed without blocking")
+  assert.equal(result.directory, path.join(root, "Pictures"))
+  fs.rmSync(root, { recursive: true, force: true })
+})
+
+test("scanner rejects oversized config input", () => {
+  const root = temp(); const config = path.join(root, "config"); fs.mkdirSync(config)
+  fs.writeFileSync(path.join(config, "user-dirs.dirs"), 'XDG_PICTURES_DIR="$HOME/Victim Pictures"\n' + "x".repeat(9000))
+  const result = scan({ HOME: root, XDG_CONFIG_HOME: config, OMARCHY_SCREENSHOT_DIR: "", XDG_PICTURES_DIR: "" })
+  assert.equal(result.directory, path.join(root, "Pictures"))
+  assert.deepEqual(result.captures, [])
+  fs.rmSync(root, { recursive: true, force: true })
+})
+
+test("scanner keeps bounded records in memory and needs no replaceable temp file", () => {
+  const root = temp(); const shots = path.join(root, "shots"); const scratch = path.join(root, "scratch")
+  fs.mkdirSync(shots); fs.mkdirSync(scratch)
+  const capture = write(shots, "screenshot-one.png", 1700000000)
+  const before = fs.readdirSync(scratch)
+  const result = scan({ HOME: root, TMPDIR: scratch, OMARCHY_SCREENSHOT_DIR: shots, XDG_PICTURES_DIR: "" })
+  assert.deepEqual(result.captures.map(x => x.path), [capture])
+  assert.deepEqual(fs.readdirSync(scratch), before)
   fs.rmSync(root, { recursive: true, force: true })
 })

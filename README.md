@@ -13,9 +13,11 @@ It follows Omarchy's `omarchy capture` interface and directory precedence:
 `~/Pictures`. It inventories only top-level `screenshot-*.png` files. Stored
 images are never OCRed or uploaded automatically.
 
-All actions use fixed argv arrays. The scanner bounds its output, ignores
-symlinks, resolves returned paths under the configured directory, and the QML
-model validates paths again before an action can receive one.
+All actions use fixed argv arrays. The scanner holds directory and file
+descriptors while it reads metadata, rejects symlinked XDG config entries,
+bounds config reads and directory work, and never creates a replaceable records
+file. The QML model validates returned paths again and clears stale selections
+before an action can receive one.
 
 ## Install
 
