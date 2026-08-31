@@ -37,6 +37,8 @@ test("real-shell preview is deterministic, full-frame, and seeded before startup
   assert.match(panel, /Saved by Omarchy\. Select one to copy its path or reveal its folder\./)
   assert.match(render, /OMARCHY_RIG_RESOLUTION:-1280x720/)
   assert.match(render, /-path '\.\/e2e\/\*'/)
+  assert.match(render, /--exclude=preview\.png/)
+  assert.doesNotMatch(render, /manifest\.json bin preview\.png README/)
   assert.match(render, /PRE_HOOK=.*rig-before-shell\.sh/)
   assert.match(render, /grim "\\\$SHOT"/)
   assert.doesNotMatch(render, /grim -g/)
