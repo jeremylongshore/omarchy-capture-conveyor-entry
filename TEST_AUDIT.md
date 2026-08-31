@@ -1,6 +1,6 @@
 # Test Audit: Capture Conveyor
 
-Date: 2026-08-29
+Date: 2026-08-30
 Classification: frontend + cli Omarchy plugin
 Audit harness: 1.3.1
 Registry: `sha256:ffbc75700fb5eb501cb47f1e4038f47ab95ae1fba534b38095e1fe7820c80ed1`
@@ -27,8 +27,8 @@ detector recognizes browser axe packages.
 | L3 unit | Implemented | node:test, c8, Stryker, CRAP, race stability |
 | L4 integration | Implemented | real scanner subprocesses and filesystem fixtures |
 | L5 system/security/a11y | Implemented | full path chains, active racers, all-entry bounds, QML keyboard/accessibility contract |
-| L6 smoke/E2E/visual | Implemented | stock runtime smoke plus Buzz validator, fixture scan, IPC open, screenshot |
-| L7 acceptance | Implemented | two critical journeys, both 100% mapped |
+| L6 smoke/E2E/visual | Local pass, Buzz pending | stock runtime smoke passes; Buzz validator, fixture scan, IPC open, and screenshot lane is fail-closed |
+| L7 acceptance | Pending live proof | two critical journeys are mapped; current revision still needs a real-shell receipt and visual approval |
 
 ## Gaps
 
@@ -44,12 +44,21 @@ orphaned.
 
 ## Final evidence
 
-- 27/27 tests and 100% Model.js statements, branches, functions, and lines
+- 29/29 tests and 100% Model.js statements, branches, functions, and lines
 - Three consecutive active-racer scanner-suite passes with zero flake
 - 95.65% mutation score with a 90% blocking floor
-- 11/11 canonical Omarchy gates and a current vendored lane
+- 11/12 canonical Omarchy gates pass locally; C43 correctly blocks on missing current render proof
 - Zero npm vulnerabilities; actionlint, ShellCheck, Perl syntax, and gitleaks clean
-- Buzz: validator 0, qmllint 0, fixture scan, live load clean, IPC panel open, selected-row render inspected
+- The authored 1280x360 SVG banner was rendered and inspected locally; the existing 1280x720 product preview remains readable and product-specific
+
+## External acceptance status
+
+Buzz production is currently unreachable. The previous rig receipt was removed
+after the manifest and presentation changed, because it cannot certify this
+source tree. REQ-CC-007 remains pending until `npm run test:e2e` produces new
+validator, qmllint, load, fixture, IPC, screenshot, and hash-bound visual
+inspection evidence from the real production-parity shell. No prior run is
+counted as acceptance evidence for this revision.
 
 The harness's optional OSV and markdownlint executables are not installed in the
 local environment. Dependency authority is enforced by npm audit, and this repo
