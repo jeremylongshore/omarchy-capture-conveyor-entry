@@ -30,8 +30,11 @@ test("banner names and visually explains Capture Conveyor without invented actio
 })
 
 test("real-shell preview is deterministic, full-frame, and seeded before startup", () => {
+  const panel = read("Panel.qml")
   const render = read("scripts/rig-render.sh")
   const hook = read("e2e/rig-before-shell.sh")
+  assert.match(panel, /contentWidth:\s*panel\.fittedContentWidth\(Style\.space\(560\)\)/)
+  assert.match(panel, /Saved by Omarchy\. Select one to copy its path or reveal its folder\./)
   assert.match(render, /OMARCHY_RIG_RESOLUTION:-1280x720/)
   assert.match(render, /-path '\.\/e2e\/\*'/)
   assert.match(render, /PRE_HOOK=.*rig-before-shell\.sh/)
