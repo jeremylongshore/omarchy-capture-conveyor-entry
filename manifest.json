@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.jeremylongshore.capture-conveyor",
   "name": "Capture Conveyor",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "author": "Jeremy Longshore",
   "license": "MIT",
   "description": "Capture Conveyor turns Omarchy screenshots into a keyboard-first inbox, not a forgotten folder. The bar counts captures; open the panel for the newest 24, select with arrow keys, start a screenshot or OCR region, copy its path, or reveal its folder. It refreshes every 20 seconds. Its bounded scanner reads only top-level screenshot PNG names, paths, sizes, and timestamps. It never reads image pixels, OCRs existing files, watches your clipboard, uploads data, opens an account, or uses the network.",
