@@ -2,6 +2,9 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import qs.Commons
+// Qt 6.12 adds its own Color type, so Omarchy's palette singleton must be
+// qualified (docs/omarchy-shell.md, Theme tokens).
+import qs.Commons as Commons
 import qs.Ui
 import "Model.js" as Model
 
@@ -136,14 +139,14 @@ Panel {
             meta: !root.loaded ? "Local screenshot metadata only. No clipboard or image leaves this device."
               : (root.scanTruncated ? "Showing the newest " + root.rows.length + " saved Omarchy screenshots."
                  : "Saved by Omarchy. Select one to copy its path or reveal its folder.")
-            foreground: root.bar ? root.bar.foreground : Color.foreground
+            foreground: root.bar ? root.bar.foreground : Commons.Color.foreground
             fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
           }
           Column {
             visible: root.loaded && root.rows.length > 0
             width: parent.width
             spacing: Style.space(2)
-            PanelSeparator { foreground: root.bar ? root.bar.foreground : Color.foreground }
+            PanelSeparator { foreground: root.bar ? root.bar.foreground : Commons.Color.foreground }
             Repeater {
               model: root.rows
               Rectangle {
@@ -161,13 +164,13 @@ Panel {
                 Text {
                   anchors.left: parent.left; anchors.leftMargin: Style.space(12); anchors.verticalCenter: parent.verticalCenter
                   text: modelData.name; textFormat: Text.PlainText; width: parent.width * 0.70; elide: Text.ElideRight
-                  color: parent.selected ? Qt.hsla(parent.rowHue, 0.56, 0.72, 1) : (root.bar ? root.bar.foreground : Color.foreground)
+                  color: parent.selected ? Qt.hsla(parent.rowHue, 0.56, 0.72, 1) : (root.bar ? root.bar.foreground : Commons.Color.foreground)
                   font.family: root.bar ? root.bar.fontFamily : Style.font.family; font.pixelSize: Style.font.body
                 }
                 Text {
                   anchors.right: parent.right; anchors.rightMargin: Style.space(16); anchors.verticalCenter: parent.verticalCenter
                   text: modelData.age; textFormat: Text.PlainText; width: parent.width * 0.22; horizontalAlignment: Text.AlignRight; elide: Text.ElideRight
-                  color: root.bar ? Qt.darker(root.bar.foreground, 1.35) : Color.muted
+                  color: root.bar ? Qt.darker(root.bar.foreground, 1.35) : Commons.Color.muted
                   font.family: root.bar ? root.bar.fontFamily : Style.font.family; font.pixelSize: Style.font.caption
                 }
                 MouseArea {
@@ -181,7 +184,7 @@ Panel {
               }
             }
           }
-          PanelSeparator { foreground: root.bar ? root.bar.foreground : Color.foreground }
+          PanelSeparator { foreground: root.bar ? root.bar.foreground : Commons.Color.foreground }
           Row {
             width: parent.width - Style.space(32); x: Style.space(16); spacing: Style.space(10)
             Repeater {
@@ -210,9 +213,9 @@ Panel {
                 required property var modelData
                 readonly property bool actionEnabled: modelData.label !== "COPY PATH" || root.selectedPath !== ""
                 width: (parent.width - parent.spacing) / 2; height: Style.space(34); radius: Style.space(4)
-                color: "transparent"; border.color: root.bar ? Qt.darker(root.bar.foreground, 1.45) : Color.muted; opacity: actionEnabled ? 1 : 0.45
+                color: "transparent"; border.color: root.bar ? Qt.darker(root.bar.foreground, 1.45) : Commons.Color.muted; opacity: actionEnabled ? 1 : 0.45
                 Accessible.role: Accessible.Button; Accessible.name: modelData.name
-                Text { anchors.centerIn: parent; text: modelData.label; textFormat: Text.PlainText; width: parent.width - Style.space(12); horizontalAlignment: Text.AlignHCenter; elide: Text.ElideRight; color: root.bar ? Qt.darker(root.bar.foreground, 1.20) : Color.muted; font.family: root.bar ? root.bar.fontFamily : Style.font.family; font.pixelSize: Style.font.caption; font.bold: true }
+                Text { anchors.centerIn: parent; text: modelData.label; textFormat: Text.PlainText; width: parent.width - Style.space(12); horizontalAlignment: Text.AlignHCenter; elide: Text.ElideRight; color: root.bar ? Qt.darker(root.bar.foreground, 1.20) : Commons.Color.muted; font.family: root.bar ? root.bar.fontFamily : Style.font.family; font.pixelSize: Style.font.caption; font.bold: true }
                 MouseArea { anchors.fill: parent; enabled: parent.actionEnabled; hoverEnabled: true; cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: modelData.run() }
               }
             }
@@ -221,7 +224,7 @@ Panel {
             visible: root.selectedPath !== ""; anchors.left: parent.left; anchors.leftMargin: Style.space(16)
             text: "UP/DOWN select  •  N new  •  O OCR  •  C copy path  •  R reveal"
             textFormat: Text.PlainText; width: parent.width - Style.space(32); elide: Text.ElideRight
-            color: root.bar ? Qt.darker(root.bar.foreground, 1.35) : Color.muted; font.family: root.bar ? root.bar.fontFamily : Style.font.family; font.pixelSize: Style.font.caption
+            color: root.bar ? Qt.darker(root.bar.foreground, 1.35) : Commons.Color.muted; font.family: root.bar ? root.bar.fontFamily : Style.font.family; font.pixelSize: Style.font.caption
           }
           Text {
             visible: root.actionStatus !== ""; text: root.actionStatus; textFormat: Text.PlainText
