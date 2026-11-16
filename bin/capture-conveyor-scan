@@ -1,27 +1,60 @@
 #!/usr/bin/perl
 # Bounded, descriptor-backed local inventory for Capture Conveyor.
+#
+# Which folder is listed. This follows where Omasnap, the screenshot tool Omarchy
+# ships, saves a capture, in Omasnap's own precedence (omasnap src/capture.cpp,
+# suggestedScreenshotPathImpl):
+#   1. OMASNAP_SCREENSHOT_DIR
+#   2. OMARCHY_SCREENSHOT_DIR (omarchy-capture-screenshot copies it into 1 when 1 is unset)
+#   3. [output] directory in $XDG_CONFIG_HOME/omasnap/omasnap.conf
+#   4. XDG_PICTURES_DIR from $XDG_CONFIG_HOME/user-dirs.dirs, plus /Screenshots
+#   5. $HOME/Pictures/Screenshots
+# Qt resolves 4 and 5 the same way (qstandardpaths_unix.cpp), so a user who never
+# configured anything is listed from ~/Pictures/Screenshots.
 use strict;
 use warnings;
 
+use Encode ();
 use Fcntl qw(O_DIRECTORY O_NOFOLLOW O_NONBLOCK O_RDONLY :mode);
 use File::Spec;
 use JSON::PP ();
 
-my $MAX_ITEMS        = 24;
-my $SCAN_BUDGET      = 512;
-my $NAME_BYTE_BUDGET = 65536;
+my $MAX_ITEMS = 24;
+# Every directory entry is counted against both budgets before anything is
+# stat-ed, buffered or sorted, so a huge folder costs a fixed amount of work per
+# poll. 2048 entries at the usual 40 to 60 name bytes sit well inside the byte
+# budget, which only guards against a folder of very long names.
+my $SCAN_BUDGET      = 2048;
+my $NAME_BYTE_BUDGET = 262144;
 my $CONFIG_MAX_BYTES = 8192;
 my $home             = $ENV{HOME} // '';
-my $config_dir       = length($ENV{XDG_CONFIG_HOME} // '')
-    ? $ENV{XDG_CONFIG_HOME}
-    : "$home/.config";
+my $home_usable      = File::Spec->file_name_is_absolute($home);
+my $config_home      = $ENV{XDG_CONFIG_HOME} // '';
+$config_home = "$home/.config" unless File::Spec->file_name_is_absolute($config_home);
 
+# Strict UTF-8 decode. Returns undef for bytes that are not valid UTF-8, because
+# JSON cannot carry them and a lossy substitute would name a path that does not
+# exist.
+sub text_of {
+    my ($bytes) = @_;
+    my $copy = $bytes;
+    return eval { Encode::decode('UTF-8', $copy, Encode::FB_CROAK) };
+}
+
+# reason is empty for a normal scan. Otherwise it names why the folder could not
+# be listed: missing, symlink, unreadable, invalid, encoding or changed.
 sub emit_result {
-    my ($directory, $truncated, $captures) = @_;
+    my ($directory, $truncated, $budget_hit, $reason, $captures) = @_;
+    my $text = text_of($directory);
+    unless (defined $text) {
+        ($text, $truncated, $budget_hit, $reason, $captures) = ('', 0, 0, 'encoding', []);
+    }
     print JSON::PP->new->ascii(1)->canonical(1)->encode({
-        directory => $directory,
-        truncated => $truncated ? JSON::PP::true : JSON::PP::false,
-        captures  => $captures,
+        directory  => $text,
+        truncated  => $truncated  ? JSON::PP::true : JSON::PP::false,
+        budget_hit => $budget_hit ? JSON::PP::true : JSON::PP::false,
+        reason     => $reason,
+        captures   => $captures,
     }), "\n";
 }
 
@@ -46,67 +79,169 @@ sub open_directory_chain {
     return (\@chain, $current);
 }
 
-sub configured_pictures_suffix {
-    my ($dir) = @_;
+# Why open_directory_chain refused a path. This only lstat()s each component to
+# choose the words the panel shows; no listing or file content comes from it.
+sub diagnose_directory {
+    my ($path) = @_;
+    return 'invalid' unless File::Spec->file_name_is_absolute($path);
+    my @parts = grep { length($_) } File::Spec->splitdir($path);
+    return 'invalid' if grep { $_ eq '.' || $_ eq '..' } @parts;
 
-    # Retain the complete parent chain. /proc/self/fd keeps the final lookup
-    # rooted in that exact directory even if a same-UID process swaps any
-    # pathname component concurrently.
+    my $walk = '';
+    for my $part (@parts) {
+        $walk .= "/$part";
+        my @info = lstat($walk);
+        unless (@info) {
+            return 'missing' if $!{ENOENT} || $!{ENOTDIR};
+            return 'unreadable';
+        }
+        return 'symlink' if S_ISLNK($info[2]);
+        return 'unreadable' unless S_ISDIR($info[2]);
+    }
+    return 'unreadable';
+}
+
+# Read one small config file. Retain the complete parent chain: /proc/self/fd
+# keeps the final lookup rooted in that exact directory even if a same-UID
+# process swaps any pathname component concurrently. A symlink, FIFO, foreign
+# owner or oversized file yields undef and is never read past the budget.
+sub read_pinned_config {
+    my ($dir, $name) = @_;
     my ($chain, $dir_fh) = open_directory_chain($dir);
-    return '' unless $chain && $dir_fh;
+    return undef unless $chain && $dir_fh;
     my @dir_stat = stat($dir_fh);
-    return '' unless @dir_stat && S_ISDIR($dir_stat[2]);
+    return undef unless @dir_stat && S_ISDIR($dir_stat[2]);
 
-    my $pinned = '/proc/self/fd/' . fileno($dir_fh) . '/user-dirs.dirs';
+    my $pinned = '/proc/self/fd/' . fileno($dir_fh) . '/' . $name;
     sysopen(my $config_fh, $pinned,
-        O_RDONLY | O_NONBLOCK | O_NOFOLLOW) or return '';
+        O_RDONLY | O_NONBLOCK | O_NOFOLLOW) or return undef;
     my @config_stat = stat($config_fh);
-    return '' unless @config_stat
+    return undef unless @config_stat
         && S_ISREG($config_stat[2])
         && $config_stat[4] == $<
         && $config_stat[7] <= $CONFIG_MAX_BYTES;
 
     my $contents = '';
     my $read = sysread($config_fh, $contents, $CONFIG_MAX_BYTES + 1);
-    return '' unless defined($read) && $read <= $CONFIG_MAX_BYTES;
-
-    for my $line (split /\n/, $contents) {
-        # Match the XDG form without evaluating the file as shell code.
-        return $1 if $line =~ /^XDG_PICTURES_DIR="\$HOME(\/[^"\x00-\x1f]*)"\r?$/;
-    }
-    return '';
+    return undef unless defined($read) && $read <= $CONFIG_MAX_BYTES;
+    return $contents;
 }
 
-my $configured = configured_pictures_suffix($config_dir);
-my $directory = length($ENV{OMARCHY_SCREENSHOT_DIR} // '')
-    ? $ENV{OMARCHY_SCREENSHOT_DIR}
-    : length($ENV{XDG_PICTURES_DIR} // '')
-        ? $ENV{XDG_PICTURES_DIR}
-        : length($configured)
-            ? "$home$configured"
-            : "$home/Pictures";
+# [output] directory from omasnap.conf, read the way Omasnap's QSettings reads
+# it (output-config.cpp, loadOutputConfig): an INI value, one pair of double
+# quotes removed, a leading ~ expanded to $HOME, the last assignment wins. The
+# file is parsed as text and never evaluated.
+sub omasnap_output_directory {
+    my ($text) = @_;
+    my ($section, $value, $quoted) = ('', undef, 0);
+    for my $line (split /\r?\n/, $text) {
+        next if $line =~ /^\s*[;#]/;
+        if ($line =~ /^\s*\[([^\]]*)\]\s*$/) {
+            $section = $1;
+            next;
+        }
+        next unless $section eq 'output';
+        next unless $line =~ /^\s*directory\s*=\s*(.*?)\s*$/;
+        $value  = $1;
+        $quoted = $value =~ s/^"(.*)"$/$1/ ? 1 : 0;
+    }
+    return undef unless defined $value;
+    # QSettings splits an unquoted value on commas, and Omasnap then reads an
+    # empty string, so it falls back to its default folder.
+    return undef if !$quoted && $value =~ /,/;
+    # Backslashes are QSettings escapes and control bytes are never a real path.
+    return undef if $value =~ /[\x00-\x1f\x7f\\]/;
+    $value =~ s/^\s+|\s+$//g;
+    if ($value eq '~') {
+        $value = $home;
+    } elsif ($value =~ m{^~/}) {
+        $value = $home . substr($value, 1);
+    }
+    return undef unless File::Spec->file_name_is_absolute($value);
+    return $value;
+}
+
+# XDG_PICTURES_DIR from user-dirs.dirs, read the way Qt reads it
+# (qstandardpaths_unix.cpp): quotes optional, a $HOME prefix expanded, an
+# absolute path taken as written, the last assignment wins. Parsed as text, never
+# evaluated as shell.
+sub user_dirs_pictures {
+    my ($text) = @_;
+    my $result;
+    for my $line (split /\n/, $text) {
+        next unless $line =~ /^XDG_PICTURES_DIR=(.*)$/;
+        my $value = $1;
+        $value =~ s/\r\z//;
+        $value =~ s/^"(.*)"$/$1/;
+        if ($value =~ m{^\$HOME(/.*)?$}) {
+            $result = $home . (defined $1 ? $1 : '');
+        } elsif ($value =~ m{^/}) {
+            $result = $value;
+        } else {
+            $result = undef;
+        }
+    }
+    return undef unless defined $result;
+    return undef if $result =~ /[\x00-\x1f\x7f]/;
+    $result =~ s{(?<=.)/+\z}{};
+    return undef unless File::Spec->file_name_is_absolute($result);
+    return $result;
+}
+
+sub screenshot_directory {
+    for my $name (qw(OMASNAP_SCREENSHOT_DIR OMARCHY_SCREENSHOT_DIR)) {
+        my $value = $ENV{$name} // '';
+        return $value if length($value);
+    }
+    return '' unless $home_usable;
+
+    my $conf = read_pinned_config("$config_home/omasnap", 'omasnap.conf');
+    if (defined $conf) {
+        my $configured = omasnap_output_directory($conf);
+        return $configured if defined $configured;
+    }
+    my $user_dirs = read_pinned_config($config_home, 'user-dirs.dirs');
+    if (defined $user_dirs) {
+        my $pictures = user_dirs_pictures($user_dirs);
+        return "$pictures/Screenshots" if defined $pictures;
+    }
+    return "$home/Pictures/Screenshots";
+}
+
+my $directory = screenshot_directory();
+unless (length($directory)) {
+    emit_result('', 0, 0, 'invalid', []);
+    exit 0;
+}
 
 # Hold the complete directory chain while enumerating it, and open each candidate beneath the
 # held descriptor. No image content is read and no replaceable records tempfile
 # exists: the bounded result set stays in memory until the single JSON write.
+# Every component is opened with O_NOFOLLOW, so a symlink anywhere in the folder
+# path is refused and reported as such rather than followed.
 my ($capture_chain, $capture_fh) = open_directory_chain($directory);
 unless ($capture_chain && $capture_fh) {
-    emit_result($directory, 0, []);
+    emit_result($directory, 0, 0, diagnose_directory($directory), []);
     exit 0;
 }
 my $capture_ref = '/proc/self/fd/' . fileno($capture_fh);
 my $resolved = readlink($capture_ref);
 unless (defined($resolved) && File::Spec->file_name_is_absolute($resolved)) {
-    emit_result($directory, 0, []);
+    emit_result($directory, 0, 0, 'unreadable', []);
+    exit 0;
+}
+my $resolved_text = text_of($resolved);
+unless (defined $resolved_text) {
+    emit_result($resolved, 0, 0, 'encoding', []);
     exit 0;
 }
 opendir(my $dir_handle, $capture_ref) or do {
-    emit_result($directory, 0, []);
+    emit_result($directory, 0, 0, 'unreadable', []);
     exit 0;
 };
 my @held_stat = stat($dir_handle);
 unless (@held_stat && S_ISDIR($held_stat[2])) {
-    emit_result($directory, 0, []);
+    emit_result($directory, 0, 0, 'unreadable', []);
     exit 0;
 }
 
@@ -123,7 +258,11 @@ while (defined(my $name = readdir($dir_handle))) {
         $budget_hit = 1;
         last;
     }
-    next unless $name =~ /^screenshot-.*\.png$/;
+    next unless $name =~ /\Ascreenshot-[^\x00-\x1f\x7f]+\.png\z/;
+    # A name that is not valid UTF-8 cannot be carried in JSON, and a lossy
+    # stand-in would name a file that does not exist, so it is left out.
+    my $name_text = text_of($name);
+    next unless defined $name_text;
 
     sysopen(my $image_fh, "$held_prefix/$name",
         O_RDONLY | O_NONBLOCK | O_NOFOLLOW) or next;
@@ -131,7 +270,7 @@ while (defined(my $name = readdir($dir_handle))) {
     next unless @image_stat && S_ISREG($image_stat[2]);
 
     push @captures, {
-        path     => "$resolved/$name",
+        path     => "$resolved_text/$name_text",
         modified => 0 + $image_stat[9],
         bytes    => 0 + $image_stat[7],
     };
@@ -143,7 +282,7 @@ my @final_stat = stat($directory);
 unless (@final_stat
     && $final_stat[0] == $held_stat[0]
     && $final_stat[1] == $held_stat[1]) {
-    emit_result($directory, 0, []);
+    emit_result($directory, 0, 0, 'changed', []);
     exit 0;
 }
 
@@ -153,4 +292,4 @@ unless (@final_stat
 my $truncated = $budget_hit || @captures > $MAX_ITEMS;
 splice(@captures, $MAX_ITEMS) if @captures > $MAX_ITEMS;
 
-emit_result($resolved, $truncated, \@captures);
+emit_result($resolved, $truncated, $budget_hit, '', \@captures);

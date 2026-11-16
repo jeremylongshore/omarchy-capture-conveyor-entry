@@ -99,6 +99,15 @@ RESULT="$(ssh "$HOST" "
   echo \"\$V \$Q \$R\"
 ")" || { echo "rig-verify: rig run failed" >&2; exit 2; }
 
+# The software the check ran on: the Omarchy checkout and the Qt, Quickshell and
+# Hyprland packages the rig has installed. A receipt that names no versions cannot
+# say what it certified, so these are recorded; "unknown" if the rig will not say.
+RIG_SOFTWARE="$(ssh "$HOST" "docker exec $CONTAINER sh -c 'git -c safe.directory=/root/omarchy -C /root/omarchy rev-parse HEAD; pacman -Q qt6-base quickshell hyprland'" 2>/dev/null || true)"
+OMARCHY_SHA="$(echo "$RIG_SOFTWARE" | grep -m1 -E '^[a-f0-9]{40}$' || true)"
+QT_VERSION="$(echo "$RIG_SOFTWARE" | awk '$1=="qt6-base"{print $2; exit}')"
+QUICKSHELL_VERSION="$(echo "$RIG_SOFTWARE" | awk '$1=="quickshell"{print $2; exit}')"
+HYPRLAND_VERSION="$(echo "$RIG_SOFTWARE" | awk '$1=="hyprland"{print $2; exit}')"
+
 # Read ONLY the receipt line. Anything else the remote emitted is noise, and
 # silently letting it shift the fields is how a pass got recorded as a failure.
 VALIDATE="$(echo "$RESULT" | tail -n1 | awk '{print $1}')"
@@ -116,9 +125,12 @@ echo "  qmllint errors:          $QMLLINT"
 jq -n --arg fp "$FP" --arg commit "$SOURCE_COMMIT" --argjson dirty "$SOURCE_DIRTY" \
       --arg archive "$ARCHIVE_SHA" --arg remote "$REMOTE_SHA" --arg rig "$HOST/$CONTAINER" \
       --argjson v "$VALIDATE" --argjson q "$QMLLINT" \
+      --arg omarchy "${OMARCHY_SHA:-unknown}" --arg qt "${QT_VERSION:-unknown}" \
+      --arg quickshell "${QUICKSHELL_VERSION:-unknown}" --arg hyprland "${HYPRLAND_VERSION:-unknown}" \
       --argjson at "$(date +%s)" --arg iso "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   '{fingerprint:$fp, sourceCommit:$commit, sourceDirty:$dirty,
     sourcePackageSha256:$archive, remotePackageSha256:$remote, rig:$rig,
+    omarchySha:$omarchy, qtVersion:$qt, quickshellVersion:$quickshell, hyprlandVersion:$hyprland,
     evidenceBoundary:"real Omarchy validator and qmllint; no live compositor render",
     omarchyPluginValidate:$v, qmllintErrors:$q,
     validatedAtEpoch:$at, validatedAt:$iso}' > "$TARGET/.rig-proof.json"

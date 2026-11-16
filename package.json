@@ -1,6 +1,6 @@
 {
   "name": "omarchy-capture-conveyor-entry",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": true,
   "description": "Local Omarchy screenshot inbox with a node test harness",
   "scripts": {
@@ -17,6 +17,8 @@
     "c8": "^12.0.0"
   },
   "overrides": {
-    "qs": "6.16.0"
+    "qs": "6.16.1",
+    "glob": "14.0.4",
+    "minimatch": "11.0.5"
   }
 }

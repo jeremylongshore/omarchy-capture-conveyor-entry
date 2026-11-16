@@ -1,66 +1,87 @@
 # Test Audit: Capture Conveyor
 
-Date: 2026-08-30
+Date: 2026-11-16
+Version audited: 0.2.2
 Classification: frontend + cli Omarchy plugin
-Audit harness: 1.3.1
-Registry: `sha256:ffbc75700fb5eb501cb47f1e4038f47ab95ae1fba534b38095e1fe7820c80ed1`
+Audit harness: 1.4.0 (pinned; not bumped here)
 
 ## Result
 
-Grade: A (96/100)
+Grade: not re-scored for 0.2.2. The last scored audit was A (96/100) on
+2026-08-30 against 0.2.0 with harness 1.3.1. This file records the evidence for
+0.2.2 and makes no new score, because the scoring skill was not re-run.
 
-The initial deterministic audit found incomplete directory budgets, nondeterministic
-race evidence, an unsupported annotation runtime, accessibility, action-failure,
-E2E, smoke, and presentation gaps. Those paths now have implementation evidence.
-The web-contract heuristic is not applicable because Capture Conveyor has no API
-or network boundary.
-Accessibility is implemented with QML roles, names, keyboard handling, and static
-assertions; audit-harness 1.3.1 still reports it as advisory because its presence
-detector recognizes browser axe packages.
+What changed the evidence in 0.2.2:
+
+- The scanner listed `~/Pictures`, but current Omarchy saves screenshots with
+  Omasnap to `~/Pictures/Screenshots`, so a stock install showed an empty inbox
+  forever. The old rig fixture and tests encoded the old folder, so every
+  earlier receipt was green while the plugin did nothing. The scanner now
+  resolves the folder in Omasnap's own order, the fixture seeds
+  `~/Pictures/Screenshots`, and the scanner tests fail against the 0.2.1 scanner
+  (26 of 31 scanner tests fail on it).
+- The scan limit is reported separately from the 24-row cap, so a partial list
+  is no longer described as the newest captures.
 
 ## Layer coverage
 
 | Layer | Status | Evidence |
 |---|---|---|
-| L1 hooks and CI | Implemented | pre-push gates; exact npm test, race, mutation, audit, and ShellCheck in Actions |
-| L2 static | Implemented | Perl compile, ShellCheck, actionlint, npm audit, gitleaks, vendored gates |
-| L3 unit | Implemented | node:test, c8, Stryker, CRAP, race stability |
+| L1 hooks and CI | Implemented | pre-push gate lane; `npm test`, race, mutation, audit, ShellCheck, actionlint in Actions |
+| L2 static | Implemented | Perl compile, ShellCheck, actionlint, gitleaks, osv-scanner (0 advisories), vendored gates at contributing-clanker f79d8c7 |
+| L3 unit | Implemented | node:test, c8 on Model.js, Stryker on Model.js, three-run race stability |
 | L4 integration | Implemented | real scanner subprocesses and filesystem fixtures |
-| L5 system/security/a11y | Implemented | full path chains, active racers, all-entry bounds, QML keyboard/accessibility contract |
-| L6 smoke/E2E/visual | Local pass, Buzz pending | stock runtime smoke passes; Buzz validator, fixture scan, IPC open, and screenshot lane is fail-closed |
-| L7 acceptance | Pending live proof | two critical journeys are mapped; current revision still needs a real-shell receipt and visual approval |
-
-## Gaps
-
-P0: 0 after implementation
-P1: 0 after QML-specific adaptation
-P2: 0
+| L5 system/security/a11y | Implemented | path chains, ready/attacked racers (capture dir, config dir, config file, omasnap.conf), FIFO, oversize, entry and byte bounds, key-catcher wiring, plain-text assertions |
+| L6 smoke/E2E/visual | Implemented on a headless sway rig | stock-runtime smoke with node, python and ruby shadowed by stubs; rig-verify and rig-render receipts; one-off key-injection run |
+| L7 acceptance | Mapped | two critical journeys in tests/JOURNEYS.md |
 
 ## Traceability
 
-Eight requirements are mapped: seven MUST and one SHOULD. All are covered.
-Both personas and both critical journeys have 100% mapped coverage. No tests are
-orphaned.
+Eleven requirements are mapped: ten MUST and one SHOULD, all covered. Three were
+added in 0.2.2 (REQ-CC-009 folder precedence and reasons, REQ-CC-010
+partial-scan honesty, REQ-CC-011 path and name encoding). No tests are orphaned.
 
-## Final evidence
+## Final evidence (0.2.2)
 
-- 29/29 tests and 100% Model.js statements, branches, functions, and lines
-- Three consecutive active-racer scanner-suite passes with zero flake
-- 95.65% mutation score with a 90% blocking floor
-- 11/12 canonical Omarchy gates pass locally; C43 correctly blocks on missing current render proof
-- Zero npm vulnerabilities; actionlint, ShellCheck, Perl syntax, and gitleaks clean
-- The authored 1280x360 SVG banner was rendered and inspected locally; the existing 1280x720 product preview remains readable and product-specific
+- 63 of 63 tests pass: 31 scanner, 15 model, 7 contract, 6 a11y, 4 smoke.
+- Model.js is at 100% statements, branches, functions and lines under c8. c8 and
+  Stryker cover Model.js only, so the QML and the Perl scanner get no coverage
+  or mutation signal from them; their evidence is the scanner and contract
+  tests.
+- Mutation score 97.79% (303 killed, 7 timed out, 7 survived) with a 90%
+  blocking floor. The seven survivors are equivalent mutants that were already
+  present or are unreachable: the `String(raw || "")` fallback literal, an
+  emptied `catch` that falls through to the same fail-closed result, two
+  loop-bound mutants that read one `undefined` record past the end and skip it,
+  the `captureHue` arithmetic, and the module-export guard.
+- Race suite: three consecutive passes of the 31 scanner tests with no flake.
+- `osv-scanner --lockfile package-lock.json` reports no issues across 203
+  packages.
+- Perl syntax, ShellCheck, actionlint and gitleaks are clean.
+- Vendored gate lane re-synced to contributing-clanker f79d8c7, lane freshness
+  exit 0. C42 now opens `bin/capture-conveyor-scan` and passes on the scan
+  budget it finds.
+- crap-score is not enforced: under harness 1.4.0 it scores zero functions for a
+  root-level Model.js and still reports PASS
+  (jeremylongshore/intent-audit-harness#248).
 
-## External acceptance status
+## Rig acceptance
 
-Buzz production is currently unreachable. The previous rig receipt was removed
-after the manifest and presentation changed, because it cannot certify this
-source tree. REQ-CC-007 remains pending until `npm run test:e2e` produces new
-validator, qmllint, load, fixture, IPC, screenshot, and hash-bound visual
-inspection evidence from the real production-parity shell. No prior run is
-counted as acceptance evidence for this revision.
+REQ-CC-007 and REQ-CC-008 are covered by `.rig-proof.json` and
+`.render-proof.json`, written by `scripts/rig-verify.sh` and
+`scripts/rig-render.sh` on the rig. Both receipts record the Omarchy revision
+and the Qt, Quickshell and Hyprland package versions the run used. The rig has
+no Hyprland compositor, so Hyprland behaviour is proven from source only.
+Omasnap is not installed on the rig, so the preview shows fixture files named
+the way Omasnap names its captures, found at `~/Pictures/Screenshots` with no
+folder override; it is not a live capture session.
 
-The harness's optional OSV and markdownlint executables are not installed in the
-local environment. Dependency authority is enforced by npm audit, and this repo
-has fewer than 50 Markdown files with no documentation corpus, so the doc-lint
-overlay is not applicable. The harness link check passes.
+## Not proven
+
+- Behaviour under a live Hyprland session and with a live Omasnap writing the
+  folder.
+- That a filesystem such as btrfs returns directory entries oldest first. The
+  scan limit text does not depend on it: past the limit the list is whatever the
+  filesystem returned first, and the panel says so.
+- Custom `filename` patterns in `omasnap.conf` that do not start with
+  `screenshot-` are not listed. This is documented in the README, not handled.

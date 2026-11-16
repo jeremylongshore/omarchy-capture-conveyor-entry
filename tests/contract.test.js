@@ -42,11 +42,40 @@ test("real-shell preview is deterministic, full-frame, and seeded before startup
   assert.match(render, /PRE_HOOK=.*rig-before-shell\.sh/)
   assert.match(render, /grim "\\\$SHOT"/)
   assert.doesNotMatch(render, /grim -g/)
-  assert.match(hook, /screenshot-launch-dashboard\.png/)
-  assert.match(hook, /screenshot-terminal-proof\.png/)
+  assert.match(hook, /seed '2 minutes ago' firefox/)
+  assert.match(hook, /seed '8 minutes ago' ghostty/)
+  assert.match(hook, /screenshot-\$\(date -d "\$ago" \+%Y-%m-%d_%H-%M-%S\)/)
   assert.match(hook, /\.captures \| length == 6/)
+  assert.match(hook, /fixtures, not captures from a live Omasnap/)
   assert.doesNotMatch(hook, /curl|wget|Authorization|Bearer/)
   assert.equal(fs.statSync(path.join(root, "e2e/rig-before-shell.sh")).mode & 0o111, 0o111)
+})
+
+test("the rig fixture seeds the folder Omasnap saves to and scans it with no override", () => {
+  const hook = read("e2e/rig-before-shell.sh")
+  assert.match(hook, /SHOT_DIR="\$HOME\/Pictures\/Screenshots"/)
+  assert.match(hook, /endswith\("\/Pictures\/Screenshots"\)/)
+  // The scan in the hook, like the one in the shell, must resolve the folder itself.
+  assert.match(hook, /env -u OMASNAP_SCREENSHOT_DIR -u OMARCHY_SCREENSHOT_DIR -u XDG_CONFIG_HOME/)
+  assert.doesNotMatch(hook, /export (OMASNAP|OMARCHY)_SCREENSHOT_DIR/)
+})
+
+test("README states the folder precedence the scanner implements, in order", () => {
+  const readme = read("README.md")
+  assert.match(readme, /OMASNAP_SCREENSHOT_DIR[\s\S]*OMARCHY_SCREENSHOT_DIR[\s\S]*omasnap\.conf[\s\S]*user-dirs\.dirs[\s\S]*~\/Pictures\/Screenshots/)
+  const scanner = read("bin/capture-conveyor-scan")
+  assert.match(scanner, /1\. OMASNAP_SCREENSHOT_DIR\n#\s+2\. OMARCHY_SCREENSHOT_DIR[^\n]*\n#\s+3\. \[output\] directory[^\n]*\n#\s+4\. XDG_PICTURES_DIR[^\n]*\n#\s+5\. \$HOME\/Pictures\/Screenshots/)
+  assert.doesNotMatch(readme, /then `XDG_PICTURES_DIR`/)
+})
+
+test("self-assessment docs make no claim the repository does not meet", () => {
+  const testing = read("tests/TESTING.md")
+  // crap-score scores zero functions for root-level Model.js (intent-audit-harness#248), so CRAP is not enforced here.
+  const l3 = testing.match(/^L3:.*$/m)[0]
+  if (/CRAP/.test(l3)) assert.match(l3, /CRAP is not enforced/)
+  assert.match(testing, /intent-audit-harness#248/)
+  const security = read("SECURITY.md")
+  assert.doesNotMatch(security, /descriptor-bound lifecycle/)
 })
 
 test("QML qualifies Omarchy's palette as Commons.Color, never bare Color", () => {

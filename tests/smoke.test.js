@@ -37,6 +37,28 @@ test("stock Perl scanner inventories an explicit local screenshot directory", ()
   }
 })
 
+test("the scanner needs no node, python or ruby on PATH, only the perl a stock Omarchy install has", () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "capture-conveyor-nointerp-"))
+  try {
+    const stubs = path.join(temp, "stubs"); fs.mkdirSync(stubs)
+    for (const name of ["node", "nodejs", "python", "python3", "ruby"]) {
+      fs.writeFileSync(path.join(stubs, name), "#!/bin/sh\nexit 127\n", { mode: 0o755 })
+    }
+    const shots = path.join(temp, "Pictures", "Screenshots"); fs.mkdirSync(shots, { recursive: true })
+    fs.writeFileSync(path.join(shots, "screenshot-2026-11-15_09-41-12-firefox.png"), "fixture")
+    const env = { PATH: stubs + ":/usr/bin:/bin", HOME: temp, LANG: "C.UTF-8" }
+    const result = spawnSync(path.join(root, "bin", "capture-conveyor-scan"), [], { encoding: "utf8", env, timeout: 2000 })
+    assert.equal(result.status, 0, result.stderr)
+    const parsed = JSON.parse(result.stdout)
+    assert.equal(parsed.directory, shots)
+    assert.equal(parsed.captures.length, 1)
+    // The shebang names perl by absolute path, so PATH cannot swap the interpreter either.
+    assert.equal(fs.readFileSync(path.join(root, "bin", "capture-conveyor-scan"), "utf8").split("\n")[0], "#!/usr/bin/perl")
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true })
+  }
+})
+
 test("runtime actions stay fixed-argv, stock-shaped, and report failures", () => {
   const qml = fs.readFileSync(path.join(root, "Panel.qml"), "utf8")
   assert.doesNotMatch(qml, /tensaku|bash|sh -c|execDetached/)

@@ -25,6 +25,8 @@ Panel {
   property var rows: []
   property string captureDirectory: ""
   property bool scanTruncated: false
+  property bool scanBudgetHit: false
+  property string scanReason: ""
   property bool loaded: false
   property string selectedPath: ""
   property string actionStatus: ""
@@ -32,6 +34,7 @@ Panel {
   readonly property bool isAlert: loaded && rows.length > 0
   readonly property string label: loaded ? Model.pillText(rows) : "CAPTURE"
   readonly property string tooltip: loaded ? Model.tooltipText(rows) : "Scanning Omarchy captures…"
+  readonly property string scanNotice: loaded ? Model.scanNotice(captureDirectory, scanReason, scanBudgetHit, scanTruncated, rows.length) : ""
 
   function open() { openedFromHotkey = false; root.controller.show(); root.refresh() }
   function openFromHotkey() { openedFromHotkey = true; root.controller.show(); root.refresh() }
@@ -62,17 +65,11 @@ Panel {
       waitForEnd: true
       onStreamFinished: {
         var parsed = Model.parseCaptures(text, root.nowMs)
-        if (parsed.directory === "") {
-          root.rows = []
-          root.captureDirectory = ""
-          root.scanTruncated = false
-          root.selectedPath = ""
-          root.loaded = true
-          return
-        }
         root.rows = parsed.captures
         root.captureDirectory = parsed.directory
         root.scanTruncated = parsed.truncated
+        root.scanBudgetHit = parsed.budgetHit
+        root.scanReason = parsed.reason
         root.selectedPath = Model.nextSelection(root.rows, root.selectedPath)
         root.loaded = true
       }
@@ -111,17 +108,21 @@ Panel {
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
+      // PanelKeyCatcher already handles Esc and Tab and turns arrows and j/k into
+      // moveRequested, Return and Space into activateRequested, and any other
+      // single character into textKey. Wiring those signals, instead of
+      // overriding Keys.onPressed, keeps the catcher's own handling intact.
       onCloseRequested: root.close()
       onTabRequested: function(direction) { root.switchPanel(direction) }
-      Keys.onPressed: function(event) {
-        if (event.key === Qt.Key_Up) root.moveSelection(-1)
-        else if (event.key === Qt.Key_Down) root.moveSelection(1)
-        else if (event.key === Qt.Key_N) root.capture()
-        else if (event.key === Qt.Key_O) root.selectText()
-        else if (event.key === Qt.Key_C) root.copyPath()
-        else if (event.key === Qt.Key_R) root.reveal()
-        else return
-        event.accepted = true
+      onMoveRequested: function(dx, dy) { if (dy !== 0) root.moveSelection(dy) }
+      onActivateRequested: function(modifiers) { root.copyPath() }
+      onTextKey: function(typed, modifiers) {
+        if (modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)) return
+        var key = typed.toLowerCase()
+        if (key === "n") root.capture()
+        else if (key === "o") root.selectText()
+        else if (key === "c") root.copyPath()
+        else if (key === "r") root.reveal()
       }
       Flickable {
         anchors.fill: parent
@@ -135,12 +136,20 @@ Panel {
           width: parent.width
           spacing: Style.space(8)
           PanelHero {
-            title: !root.loaded ? "READING CAPTURES" : (root.rows.length ? root.rows.length + " RECENT CAPTURES" : "NO SAVED CAPTURES")
+            title: Model.heroTitle(root.loaded, root.rows.length, root.scanReason, root.scanBudgetHit)
             meta: !root.loaded ? "Local screenshot metadata only. No clipboard or image leaves this device."
-              : (root.scanTruncated ? "Showing the newest " + root.rows.length + " saved Omarchy screenshots."
-                 : "Saved by Omarchy. Select one to copy its path or reveal its folder.")
+              : (root.rows.length ? "Saved by Omarchy. Select one to copy its path or reveal its folder."
+                 : "Nothing to select yet.")
             foreground: root.bar ? root.bar.foreground : Commons.Color.foreground
             fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
+          }
+          Text {
+            visible: root.scanNotice !== ""
+            x: Style.space(16); width: parent.width - Style.space(32)
+            text: root.scanNotice; textFormat: Text.PlainText
+            wrapMode: Text.WordWrap; maximumLineCount: 3; elide: Text.ElideRight
+            color: root.scanReason !== "" || root.scanBudgetHit ? Commons.Color.urgent : (root.bar ? Qt.darker(root.bar.foreground, 1.35) : Commons.Color.muted)
+            font.family: root.bar ? root.bar.fontFamily : Style.font.family; font.pixelSize: Style.font.caption
           }
           Column {
             visible: root.loaded && root.rows.length > 0
@@ -164,8 +173,8 @@ Panel {
                 Text {
                   anchors.left: parent.left; anchors.leftMargin: Style.space(12); anchors.verticalCenter: parent.verticalCenter
                   text: modelData.name; textFormat: Text.PlainText; width: parent.width * 0.70; elide: Text.ElideRight
-                  color: parent.selected ? Qt.hsla(parent.rowHue, 0.56, 0.72, 1) : (root.bar ? root.bar.foreground : Commons.Color.foreground)
-                  font.family: root.bar ? root.bar.fontFamily : Style.font.family; font.pixelSize: Style.font.body
+                  color: parent.selected ? Commons.Color.accent : (root.bar ? root.bar.foreground : Commons.Color.foreground)
+                  font.family: root.bar ? root.bar.fontFamily : Style.font.family; font.pixelSize: Style.font.body; font.bold: parent.selected
                 }
                 Text {
                   anchors.right: parent.right; anchors.rightMargin: Style.space(16); anchors.verticalCenter: parent.verticalCenter
@@ -197,7 +206,7 @@ Panel {
                 width: (parent.width - parent.spacing) / 2; height: Style.space(44); radius: Style.space(4)
                 color: Qt.hsla(modelData.hue, 0.48, 0.50, 0.13); border.color: Qt.hsla(modelData.hue, 0.55, 0.66, 0.72)
                 Accessible.role: Accessible.Button; Accessible.name: modelData.name
-                Text { anchors.centerIn: parent; text: modelData.label; textFormat: Text.PlainText; width: parent.width - Style.space(12); horizontalAlignment: Text.AlignHCenter; elide: Text.ElideRight; color: Qt.hsla(parent.modelData.hue, 0.56, 0.72, 1); font.family: root.bar ? root.bar.fontFamily : Style.font.family; font.pixelSize: Style.font.caption; font.bold: true; font.letterSpacing: 1 }
+                Text { anchors.centerIn: parent; text: modelData.label; textFormat: Text.PlainText; width: parent.width - Style.space(12); horizontalAlignment: Text.AlignHCenter; elide: Text.ElideRight; color: Commons.Color.accent; font.family: root.bar ? root.bar.fontFamily : Style.font.family; font.pixelSize: Style.font.caption; font.bold: true; font.letterSpacing: 1 }
                 MouseArea { anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: modelData.run() }
               }
             }
@@ -221,15 +230,15 @@ Panel {
             }
           }
           Text {
-            visible: root.selectedPath !== ""; anchors.left: parent.left; anchors.leftMargin: Style.space(16)
-            text: "UP/DOWN select  •  N new  •  O OCR  •  C copy path  •  R reveal"
+            visible: root.loaded; anchors.left: parent.left; anchors.leftMargin: Style.space(16)
+            text: "UP/DOWN select  •  ENTER or C copy path  •  N new  •  O OCR  •  R reveal"
             textFormat: Text.PlainText; width: parent.width - Style.space(32); elide: Text.ElideRight
             color: root.bar ? Qt.darker(root.bar.foreground, 1.35) : Commons.Color.muted; font.family: root.bar ? root.bar.fontFamily : Style.font.family; font.pixelSize: Style.font.caption
           }
           Text {
             visible: root.actionStatus !== ""; text: root.actionStatus; textFormat: Text.PlainText
             width: parent.width - Style.space(32); x: Style.space(16); elide: Text.ElideRight
-            color: Qt.hsla(0.01, 0.62, 0.68, 1); font.family: root.bar ? root.bar.fontFamily : Style.font.family; font.pixelSize: Style.font.caption; font.bold: true
+            color: Commons.Color.urgent; font.family: root.bar ? root.bar.fontFamily : Style.font.family; font.pixelSize: Style.font.caption; font.bold: true
           }
           Item { width: 1; height: Style.space(4) }
         }
