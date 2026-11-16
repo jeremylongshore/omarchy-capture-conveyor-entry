@@ -10,7 +10,7 @@ Linked RTM: REQ-CC-001, REQ-CC-004, REQ-CC-006, REQ-CC-007, REQ-CC-008
 
 | # | Step | Layer | Test file | Status |
 |---|---|---|---|---|
-| 1 | Plugin loads and scans fixture captures in the stock shell | L6 | e2e/buzz.sh | Covered |
+| 1 | Plugin loads and scans fixture captures in ~/Pictures/Screenshots, the folder Omasnap saves to, in the rig shell | L6 | e2e/buzz.sh | Covered |
 | 2 | Panel opens through IPC with a visibly selected row | L5, L6 | tests/a11y.test.js, e2e/buzz.sh | Covered |
 | 3 | Up and Down move only through current captures | L3, L5 | tests/model.test.js, tests/a11y.test.js | Covered |
 | 4 | Copy, new capture, OCR, and reveal use fixed argv actions | L4, L5 | tests/smoke.test.js | Covered |

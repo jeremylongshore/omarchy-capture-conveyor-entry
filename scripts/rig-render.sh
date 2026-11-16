@@ -16,6 +16,11 @@ HOST="${OMARCHY_RIG_HOST:-intent-ops-buzz}"
 CONTAINER="${OMARCHY_RIG_CONTAINER:-omarchy-rig}"
 RES="${OMARCHY_RIG_RESOLUTION:-1280x720}"
 SCALE="${OMARCHY_RIG_SCALE:-1.25}"
+# The Omarchy theme the shell renders with. The committed preview uses the default;
+# set OMARCHY_RIG_THEME=catppuccin-latte (or another name under omarchy/themes) to
+# check the panel on a light theme.
+THEME="${OMARCHY_RIG_THEME:-tokyo-night}"
+[[ "$THEME" =~ ^[a-z0-9-]+$ ]] || { echo "rig-render: OMARCHY_RIG_THEME must be a theme directory name" >&2; exit 2; }
 
 for tool in jq identify convert; do
   command -v "$tool" >/dev/null 2>&1 || { echo "rig-render: $tool is required" >&2; exit 2; }
@@ -82,7 +87,7 @@ scp -q -o BatchMode=yes "$TGZ" "$HOST:/tmp/rigrender-$RUN_ID.tgz" || {
 cat > "$REMOTE" <<REMOTE_EOF
 #!/bin/sh
 set -eu
-MOD="$MOD"; NAME="$NAME"; RUN_ID="$RUN_ID"; RES="$RES"; SCALE="$SCALE"
+MOD="$MOD"; NAME="$NAME"; RUN_ID="$RUN_ID"; RES="$RES"; SCALE="$SCALE"; THEME="$THEME"
 RUNTIME=/tmp/rigrender-runtime-\$RUN_ID
 RIG_ROOT=/tmp/rigrender-home-\$RUN_ID
 SWAY_CONFIG=/tmp/rigrender-sway-\$RUN_ID.conf
@@ -106,14 +111,16 @@ chmod 700 "\$RUNTIME" "\$RIG_ROOT" "\$RIG_ROOT/.config" \
 tar xzf /tmp/rigrender-\$RUN_ID.tgz -C "\$PLUGIN_DIR"
 # A real Omarchy install always has a current theme. Seed the state
 # omarchy-theme-set writes (current/theme, theme.name, background) with the stock
-# tokyo-night theme: current first-party shell plugins (image-picker, lock) read
-# it from HOME/.local/state and log QML warnings when it is missing, which would
-# otherwise read here as plugin warnings.
+# tokyo-night theme (or the one OMARCHY_RIG_THEME names): current first-party shell
+# plugins (image-picker, lock) read it from HOME/.local/state and log QML warnings
+# when it is missing, which would otherwise read here as plugin warnings.
 CURRENT="\$RIG_ROOT/.local/state/omarchy/current"
 mkdir -p "\$CURRENT"
-ln -nsf /root/omarchy/themes/tokyo-night "\$CURRENT/theme"
-printf 'tokyo-night\n' > "\$CURRENT/theme.name"
-ln -nsf "\$CURRENT/theme/backgrounds/0-liftoff.webp" "\$CURRENT/background"
+[ -d "/root/omarchy/themes/\$THEME" ] || { echo "rig-render: no theme \$THEME on the rig" >&2; exit 1; }
+ln -nsf "/root/omarchy/themes/\$THEME" "\$CURRENT/theme"
+printf '%s\n' "\$THEME" > "\$CURRENT/theme.name"
+BACKGROUND=\$(ls "/root/omarchy/themes/\$THEME/backgrounds" 2>/dev/null | head -1)
+[ -z "\$BACKGROUND" ] || ln -nsf "\$CURRENT/theme/backgrounds/\$BACKGROUND" "\$CURRENT/background"
 
 cat > "\$SWAY_CONFIG" <<SWAY
 output * resolution \$RES scale \$SCALE
@@ -178,6 +185,12 @@ grim "\$SHOT" 2>/dev/null
 echo "===RUN=== \$RUN_ID"
 echo "===LOGSHA=== \$(sha256sum "\$QS_LOG" | awk '{print \$1}')"
 echo "===PACKAGE=== \$(sha256sum /tmp/rigrender-\$RUN_ID.tgz | awk '{print \$1}')"
+# The software the render ran on, recorded in the receipt: the Omarchy checkout the
+# shell was loaded from, and the Qt, Quickshell and Hyprland packages installed.
+echo "===OMARCHY=== \$(git -c safe.directory=/root/omarchy -C /root/omarchy rev-parse HEAD 2>/dev/null)"
+echo "===QT=== \$(pacman -Q qt6-base 2>/dev/null | awk '{print \$2}')"
+echo "===QUICKSHELL=== \$(pacman -Q quickshell 2>/dev/null | awk '{print \$2}')"
+echo "===HYPRLAND=== \$(pacman -Q hyprland 2>/dev/null | awk '{print \$2}')"
 echo "===SHOT=== \$(ls -l "\$SHOT" 2>/dev/null | awk '{print \$5}') bytes"
 REMOTE_EOF
 
@@ -191,6 +204,10 @@ SIZE="$(printf '%s' "$RESULT" | grep -oE '===SHOT=== [0-9]+' | grep -oE '[0-9]+'
 REMOTE_SHA="$(printf '%s' "$RESULT" | grep -oE '===PACKAGE=== [a-f0-9]{64}' | awk '{print $2}' || true)"
 RAW_LOG_SHA="$(printf '%s' "$RESULT" | grep -oE '===LOGSHA=== [a-f0-9]{64}' | awk '{print $2}' || true)"
 REMOTE_RUN_ID="$(printf '%s' "$RESULT" | grep -oE '===RUN=== [A-Za-z0-9.-]+' | awk '{print $2}' || true)"
+OMARCHY_SHA="$(printf '%s' "$RESULT" | grep -oE '===OMARCHY=== [a-f0-9]{40}' | awk '{print $2}' || true)"
+QT_VERSION="$(printf '%s' "$RESULT" | grep -oE '===QT=== [0-9][0-9A-Za-z._:+-]*' | awk '{print $2}' || true)"
+QUICKSHELL_VERSION="$(printf '%s' "$RESULT" | grep -oE '===QUICKSHELL=== [0-9][0-9A-Za-z._:+-]*' | awk '{print $2}' || true)"
+HYPRLAND_VERSION="$(printf '%s' "$RESULT" | grep -oE '===HYPRLAND=== [0-9][0-9A-Za-z._:+-]*' | awk '{print $2}' || true)"
 
 if [[ -n "$WARNINGS" ]]; then
   echo "rig-render: shell warnings belong to this plugin run:" >&2
@@ -224,10 +241,13 @@ PREVIEW_SHA="$(sha256sum "$OUT" | cut -d' ' -f1)"
 jq -n --arg fp "$FP" --arg commit "$SOURCE_COMMIT" --argjson dirty "$SOURCE_DIRTY" \
   --arg archive "$ARCHIVE_SHA" --arg remote "$REMOTE_SHA" --arg rig "$HOST/$CONTAINER" \
   --arg run "$REMOTE_RUN_ID" --arg logSha "$RAW_LOG_SHA" --arg sha "$PREVIEW_SHA" \
+  --arg theme "$THEME" --arg omarchy "${OMARCHY_SHA:-unknown}" --arg qt "${QT_VERSION:-unknown}" \
+  --arg quickshell "${QUICKSHELL_VERSION:-unknown}" --arg hyprland "${HYPRLAND_VERSION:-unknown}" \
   --arg dimensions "${DIMS/x/ x }" --arg coverage "$COVERAGE" \
   --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   '{fingerprint:$fp,sourceCommit:$commit,sourceDirty:$dirty,
     sourcePackageSha256:$archive,remotePackageSha256:$remote,rig:$rig,runId:$run,rawShellLogSha256:$logSha,
+    theme:$theme,omarchySha:$omarchy,qtVersion:$qt,quickshellVersion:$quickshell,hyprlandVersion:$hyprland,
     packageBoundary:"runtime tree; generated proof receipts, reports, tests, developer scripts, and marketplace preview excluded",
     evidenceBoundary:"isolated real Omarchy shell and QML under a dedicated headless compositor; plugin-specific fixture hook when present; live plugin IPC toggle; direct full-frame grim capture with no crop or image post-processing",
     visualInspection:{status:"pending",previewSha256:$sha,checks:[]},

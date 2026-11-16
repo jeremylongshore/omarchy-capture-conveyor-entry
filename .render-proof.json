@@ -1,27 +1,32 @@
 {
-  "fingerprint": "f505511d2fefb85c3c40467f0ea5eae49e761049c433a4b05b04b51f0b9c743e",
-  "sourceCommit": "5fc889bb8fd7ab7b7635cb7871319bb1e10ed7bd",
+  "fingerprint": "80f58abbc9ba54dfc23cd334e2617244660806dea90805d1c4da87daa4fb8138",
+  "sourceCommit": "dd4530a1718244079d8fcc144349d7ee03044dc0",
   "sourceDirty": false,
-  "sourcePackageSha256": "3b0331fa7f2e4f1190c569c13b2a8a169920ff1becf797fbdcd99ba636302083",
-  "remotePackageSha256": "3b0331fa7f2e4f1190c569c13b2a8a169920ff1becf797fbdcd99ba636302083",
+  "sourcePackageSha256": "10269ecabc7631ebadcbf41854c3f701440eee75d3e887efaeb0ffbdccf98ebd",
+  "remotePackageSha256": "10269ecabc7631ebadcbf41854c3f701440eee75d3e887efaeb0ffbdccf98ebd",
   "rig": "intent-ops-buzz/omarchy-rig",
-  "runId": "capture-conveyor-79958",
-  "rawShellLogSha256": "7d3ae4425283671523d81706599157701779348dc4329fb0a79bf80891c0cf1a",
+  "runId": "capture-conveyor-1929611",
+  "rawShellLogSha256": "33b67c9833f3a525898607cd1cba64317757fefc625b39850dcd4f53fb657b7a",
+  "theme": "tokyo-night",
+  "omarchySha": "74de10479d3bf7aa7865408e33219064cfe45432",
+  "qtVersion": "6.12.0-5",
+  "quickshellVersion": "0.3.2-1",
+  "hyprlandVersion": "0.57.2-1",
   "packageBoundary": "runtime tree; generated proof receipts, reports, tests, developer scripts, and marketplace preview excluded",
   "evidenceBoundary": "isolated real Omarchy shell and QML under a dedicated headless compositor; plugin-specific fixture hook when present; live plugin IPC toggle; direct full-frame grim capture with no crop or image post-processing",
   "visualInspection": {
     "status": "approved",
-    "previewSha256": "9b8e62cefdbbec38bf0cc7a718b7a898ead18235abdf00dda5ac82123ee5e31d",
+    "previewSha256": "2e52bc0bde415d896c77d84fcaf402ce94774e3194a13d9471bf245abd21ef84",
     "inspector": "Claude (agent) for jeremylongshore",
-    "inspectedAt": "2026-11-15T08:34:22Z",
+    "inspectedAt": "2026-11-16T00:23:37Z",
     "checks": [
       "product value visible at marketplace scale",
       "no primary content clipped",
       "plugin-specific visual identity"
     ]
   },
-  "previewSha256": "9b8e62cefdbbec38bf0cc7a718b7a898ead18235abdf00dda5ac82123ee5e31d",
+  "previewSha256": "2e52bc0bde415d896c77d84fcaf402ce94774e3194a13d9471bf245abd21ef84",
   "dimensions": "1280 x 720",
-  "nonblackCoverage": 0.463585,
-  "capturedAt": "2026-11-15T08:34:17Z"
+  "nonblackCoverage": 0.998568,
+  "capturedAt": "2026-11-16T00:23:28Z"
 }
