@@ -18,10 +18,7 @@ mutation.kill_rate: 90
 crap.prod_max: 30
 crap.test_max: 15
 crap.project_avg: 10
-# crap.* are the intended policy, not an enforced gate. Under audit-harness 1.4.0, crap-score
-# scores zero functions for a root-level Model.js and still reports PASS
-# (jeremylongshore/intent-audit-harness#248), so nothing here enforces them. CRAP is
-# measured separately by the fleet coordinator.
+crap.enforcement: none; crap-score scores zero functions for root-level Model.js under audit-harness 1.4.0 and still reports PASS (jeremylongshore/intent-audit-harness#248), so the crap.* values above are intended policy and CRAP is measured separately by the fleet coordinator
 flaky.tolerance: 0/3runs
 test.complexity_ceiling: 15
 personas.flow_coverage_min: 100
